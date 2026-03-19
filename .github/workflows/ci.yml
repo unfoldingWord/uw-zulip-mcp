@@ -153,3 +153,10 @@ jobs:
 
       - name: Type check with mypy
         run: uv run mypy src
+
+      - name: Security scan with bandit
+        # -ll = medium+ severity, -ii = medium+ confidence
+        # Skips: B110 (try/except/pass), B112 (try/except/continue),
+        #   B311 (pseudo-random), B324 (MD5 for caching), B307 (eval),
+        #   B608 (SQL — DuckDB uses parameterized but bandit can't tell)
+        run: uv run bandit -r src/zulipchat_mcp -ll -ii -q -s B110,B112,B311,B324,B307,B608
