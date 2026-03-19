@@ -142,10 +142,32 @@ class ConfigManager:
         return False
 
     def has_bot_credentials(self) -> bool:
-        """Check if bot credentials are configured."""
-        if self.config.bot_config_file and os.path.exists(self.config.bot_config_file):
-            return True
+        """Check if bot credentials are configured and valid.
+
+        When a bot config file is specified, validates that required fields
+        (email, key, site) are present in the file rather than just checking
+        file existence. This prevents ugly errors on first bot API call.
+        """
+        if self.config.bot_config_file:
+            if not os.path.exists(self.config.bot_config_file):
+                return False
+            return self._validate_bot_config_file(self.config.bot_config_file)
         return bool(self.config.bot_email and self.config.bot_api_key)
+
+    @staticmethod
+    def _validate_bot_config_file(path: str) -> bool:
+        """Validate that a zuliprc file contains required fields."""
+        import configparser
+
+        config = configparser.ConfigParser()
+        try:
+            config.read(path)
+            if not config.has_section("api"):
+                return False
+            required = ("email", "key", "site")
+            return all(config.has_option("api", field) for field in required)
+        except Exception:
+            return False
 
     def get_zulip_client_config(self, use_bot: bool = False) -> dict[str, str | None]:
         """Get configuration dict for Zulip client initialization."""

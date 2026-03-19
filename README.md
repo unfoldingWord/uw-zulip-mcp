@@ -254,6 +254,18 @@ Or via environment: `ZULIPCHAT_DISABLE_AGENTS=true`
 
 Agent tools are not registered and background services are not started.
 
+### Audit Logging
+
+Log which tools were invoked and which channels were accessed — without logging message content:
+
+```env
+ZULIPCHAT_AUDIT_ENABLED=true
+ZULIPCHAT_AUDIT_FILE=/var/log/zulipchat-mcp-audit.log  # optional, defaults to stderr
+ZULIPCHAT_AUDIT_LEVEL=INFO                              # optional
+```
+
+Audit events include: tool name, channel accessed, search query, identity, and whether the request was blocked by policy. Message content is never logged.
+
 ### Recommended Deployment
 
 For a locked-down organizational deployment:

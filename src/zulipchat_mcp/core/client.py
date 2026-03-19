@@ -10,6 +10,7 @@ from urllib.parse import urlparse, urlunparse
 from zulip import Client
 
 from ..config import ConfigManager
+from .audit import log_channel_access, log_tool_invocation
 from .cache import cache_decorator, stream_cache, user_cache
 from .channel_filter import get_channel_filter, is_channel_allowed
 
@@ -173,6 +174,10 @@ class ZulipClientWrapper:
                 logger.warning(
                     "Blocked send to '%s': channel excluded by policy", stream_name
                 )
+                log_tool_invocation(
+                    "send_message", stream=stream_name,
+                    identity=self.identity, blocked=True, reason="channel_filter",
+                )
                 return {
                     "result": "error",
                     "msg": f"Channel '{stream_name}' is outside the configured channel filter scope",
@@ -182,6 +187,10 @@ class ZulipClientWrapper:
         if message_type == "private":
             cf = get_channel_filter()
             if cf.config.enabled and cf.config.exclude_dms:
+                log_tool_invocation(
+                    "send_message", identity=self.identity,
+                    blocked=True, reason="dms_excluded",
+                )
                 return {
                     "result": "error",
                     "msg": "Direct messages are disabled by channel filter configuration",
@@ -190,9 +199,11 @@ class ZulipClientWrapper:
         request: dict[str, Any] = {"type": message_type, "content": content}
 
         if message_type == "stream":
-            request["to"] = to if isinstance(to, str) else to[0]
+            stream_name = to if isinstance(to, str) else to[0]
+            request["to"] = stream_name
             if topic:
                 request["topic"] = topic
+            log_channel_access(stream_name, "send", identity=self.identity)
         else:  # private message
             request["to"] = to if isinstance(to, list) else [to]
 
@@ -300,11 +311,18 @@ class ZulipClientWrapper:
         """
         # Channel filter: block reads from excluded channels
         if stream_name and not is_channel_allowed(stream_name):
+            log_tool_invocation(
+                "get_messages_from_stream", stream=stream_name,
+                identity=self.identity, blocked=True, reason="channel_filter",
+            )
             return {
                 "result": "success",
                 "messages": [],
                 "msg": f"Channel '{stream_name}' is outside the configured channel filter scope",
             }
+
+        if stream_name:
+            log_channel_access(stream_name, "read", identity=self.identity)
 
         narrow: list[dict[str, Any]] = []
         if stream_name:
@@ -329,6 +347,7 @@ class ZulipClientWrapper:
 
     def search_messages(self, query: str, num_results: int = 50) -> dict[str, Any]:
         """Search messages by content."""
+        log_tool_invocation("search_messages", query=query, identity=self.identity)
         narrow = [{"operator": "search", "operand": query}]
         try:
             return self.get_messages_raw(
@@ -401,11 +420,21 @@ class ZulipClientWrapper:
     def get_stream_topics(self, stream_id: int) -> dict[str, Any]:
         """Get recent topics for a stream."""
         # Channel filter: block by stream ID
-        if not get_channel_filter().is_stream_id_allowed(stream_id):
+        cf = get_channel_filter()
+        if not cf.is_stream_id_allowed(stream_id):
+            log_tool_invocation(
+                "get_stream_topics", identity=self.identity,
+                blocked=True, reason="stream_id_filter",
+                extra={"stream_id": str(stream_id)},
+            )
             return {
                 "result": "error",
                 "msg": f"Stream {stream_id} is outside the configured channel filter scope",
             }
+        # Resolve name for audit log
+        meta = cf._stream_index.get(stream_id)
+        if meta:
+            log_channel_access(meta["name"], "list_topics", identity=self.identity)
         return self.client.get_stream_topics(stream_id)
 
     def add_reaction(self, message_id: int, emoji_name: str) -> dict[str, Any]:

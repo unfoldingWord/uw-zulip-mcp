@@ -7,6 +7,7 @@ from fastmcp import FastMCP
 
 from . import __version__
 from .config import init_config_manager
+from .core.audit import init_audit_logging, is_audit_enabled
 from .core.channel_filter import init_channel_filter
 from .core.security import set_unsafe_mode
 
@@ -114,6 +115,11 @@ def main() -> None:
     set_unsafe_mode(args.unsafe)
     if args.unsafe:
         logger.warning("RUNNING IN UNSAFE MODE - Dangerous tools enabled")
+
+    # Initialize audit logging
+    init_audit_logging()
+    if is_audit_enabled():
+        logger.info("Audit logging ENABLED")
 
     # Initialize channel filter (JD taxonomy-based access control)
     try:
