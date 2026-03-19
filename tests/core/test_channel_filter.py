@@ -425,9 +425,23 @@ class TestStreamIdEnforcement:
     def test_blocked_stream_by_id_non_jd(self, filter_with_index):
         assert filter_with_index.is_stream_id_allowed(5) is False  # Helpdesk - ST
 
-    def test_unknown_stream_id_allowed(self, filter_with_index):
-        # Unknown IDs allowed (fail-open) to avoid breaking tools before cache warmup
+    def test_unknown_stream_id_allowed_by_default(self, filter_with_index):
+        # Default: unknown IDs allowed (fail-open) for compatibility
         assert filter_with_index.is_stream_id_allowed(999) is True
+
+    def test_unknown_stream_id_denied_when_configured(self):
+        cf = ChannelFilter(
+            ChannelFilterConfig(
+                enabled=True,
+                jd_allow_areas=[(30, 99)],
+                deny_unknown_stream_ids=True,
+            )
+        )
+        cf.update_stream_index([
+            {"stream_id": 1, "name": "30 Infrastructure", "invite_only": False},
+        ])
+        assert cf.is_stream_id_allowed(1) is True
+        assert cf.is_stream_id_allowed(999) is False
 
     def test_index_update_idempotent(self, filter_with_index):
         # Updating index again should not break anything

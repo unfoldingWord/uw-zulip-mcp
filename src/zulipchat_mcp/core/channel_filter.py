@@ -47,6 +47,7 @@ class ChannelFilterConfig:
     exclude_non_jd: bool = True
     exclude_dms: bool = True
     exclude_private: bool = True
+    deny_unknown_stream_ids: bool = False
 
 
 def parse_area_ranges(spec: str) -> list[tuple[int, int]]:
@@ -183,9 +184,16 @@ class ChannelFilter:
 
         meta = self._stream_index.get(stream_id)
         if meta is None:
-            # Unknown stream ID — not in our index. Log and allow to avoid
-            # breaking tools before cache warmup. The stream listing filter
-            # prevents discovery of blocked stream IDs in normal operation.
+            # Unknown stream ID — not in our index.
+            if self.config.deny_unknown_stream_ids:
+                _increment_blocked("stream_id")
+                logger.warning(
+                    "Blocked unknown stream ID %d: deny_unknown_stream_ids is enabled "
+                    "(index size: %d)",
+                    stream_id,
+                    len(self._stream_index),
+                )
+                return False
             logger.debug(
                 "Stream ID %d not in filter index, allowing (index size: %d)",
                 stream_id,
@@ -362,6 +370,7 @@ def load_filter_config_from_env() -> ChannelFilterConfig:
         exclude_non_jd=_bool_env("ZULIPCHAT_EXCLUDE_NON_JD", default=True),
         exclude_dms=_bool_env("ZULIPCHAT_EXCLUDE_DMS", default=True),
         exclude_private=_bool_env("ZULIPCHAT_EXCLUDE_PRIVATE", default=True),
+        deny_unknown_stream_ids=_bool_env("ZULIPCHAT_DENY_UNKNOWN_STREAM_IDS", default=False),
     )
 
 
