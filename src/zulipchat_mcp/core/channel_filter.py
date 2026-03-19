@@ -4,7 +4,8 @@ Provides deterministic, taxonomy-based access control for Zulip channels.
 Channels are filtered by their JD prefix (XX or XX.YY format), with support
 for area-range allowlists/denylists and individual channel overrides.
 
-Filter is enforced at the client wrapper level so no tool can bypass it.
+Filter is enforced at the client wrapper level via both name and stream-ID
+based guards so no tool can bypass it.
 """
 
 from __future__ import annotations
@@ -13,11 +14,25 @@ import logging
 import os
 import re
 from dataclasses import dataclass, field
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 # Matches JD prefixes: "30 Infrastructure", "42.01 Hebrew Grammar", "00.16 Prayer Requests"
 JD_PREFIX_PATTERN = re.compile(r"^(\d{2})(?:\.(\d{2}))?\s")
+
+# Counter for blocked-by-policy events (for observability)
+_blocked_counts: dict[str, int] = {"send": 0, "read": 0, "stream_list": 0, "stream_id": 0}
+
+
+def get_blocked_counts() -> dict[str, int]:
+    """Get current blocked-by-policy counters."""
+    return dict(_blocked_counts)
+
+
+def _increment_blocked(category: str) -> None:
+    """Increment a blocked-by-policy counter and log."""
+    _blocked_counts[category] = _blocked_counts.get(category, 0) + 1
 
 
 @dataclass
@@ -37,6 +52,8 @@ class ChannelFilterConfig:
 def parse_area_ranges(spec: str) -> list[tuple[int, int]]:
     """Parse area range specification into (min, max) tuples.
 
+    Raises ValueError with a descriptive message on malformed input.
+
     Examples:
         "30-99" -> [(30, 99)]
         "01,02,14,30-99" -> [(1, 1), (2, 2), (14, 14), (30, 99)]
@@ -50,12 +67,18 @@ def parse_area_ranges(spec: str) -> list[tuple[int, int]]:
         part = part.strip()
         if not part:
             continue
-        if "-" in part:
-            lo, hi = part.split("-", 1)
-            ranges.append((int(lo.strip()), int(hi.strip())))
-        else:
-            val = int(part.strip())
-            ranges.append((val, val))
+        try:
+            if "-" in part:
+                lo, hi = part.split("-", 1)
+                ranges.append((int(lo.strip()), int(hi.strip())))
+            else:
+                val = int(part.strip())
+                ranges.append((val, val))
+        except ValueError as e:
+            raise ValueError(
+                f"Invalid JD area range '{part}' — expected format like '30-99' or '42'. "
+                f"Check your ZULIPCHAT_JD_ALLOW_AREAS / ZULIPCHAT_JD_DENY_AREAS env vars."
+            ) from e
     return ranges
 
 
@@ -98,6 +121,9 @@ def _in_ranges(value: int, ranges: list[tuple[int, int]]) -> bool:
 class ChannelFilter:
     """Filters Zulip channels based on JD naming conventions.
 
+    Maintains a stream metadata index (populated from get_streams results)
+    to enable consistent enforcement across both name-based and ID-based access.
+
     Evaluation order for a channel name:
     1. If in channel_exclude -> DENY (highest priority)
     2. If in channel_include -> ALLOW
@@ -109,6 +135,8 @@ class ChannelFilter:
 
     def __init__(self, config: ChannelFilterConfig) -> None:
         self.config = config
+        # Stream metadata index: id -> {"name": str, "invite_only": bool}
+        self._stream_index: dict[int, dict[str, Any]] = {}
         if config.enabled:
             logger.info(
                 "Channel filter enabled: allow_areas=%s, deny_areas=%s, "
@@ -123,11 +151,78 @@ class ChannelFilter:
                 config.exclude_private,
             )
 
+    def update_stream_index(self, streams: list[dict[str, Any]]) -> None:
+        """Update the stream metadata index from a list of stream dicts.
+
+        Called after fetching streams from the API (before filtering) so the
+        index contains ALL streams, not just allowed ones. This enables
+        ID-based lookups for enforcement.
+        """
+        for s in streams:
+            stream_id = s.get("stream_id")
+            if stream_id is not None:
+                self._stream_index[stream_id] = {
+                    "name": s.get("name", ""),
+                    "invite_only": s.get("invite_only", False),
+                }
+
+    def is_stream_id_allowed(self, stream_id: int) -> bool:
+        """Check if a stream ID passes the filter.
+
+        Uses the stream metadata index to resolve ID to name and check
+        both the name filter and private channel exclusion.
+
+        Returns True if:
+        - Filter is disabled
+        - Stream ID is not in the index (fail-open for unknown IDs to avoid
+          breaking tools when index hasn't been populated yet — the stream
+          listing filter prevents discovery of blocked IDs)
+        """
+        if not self.config.enabled:
+            return True
+
+        meta = self._stream_index.get(stream_id)
+        if meta is None:
+            # Unknown stream ID — not in our index. Log and allow to avoid
+            # breaking tools before cache warmup. The stream listing filter
+            # prevents discovery of blocked stream IDs in normal operation.
+            logger.debug(
+                "Stream ID %d not in filter index, allowing (index size: %d)",
+                stream_id,
+                len(self._stream_index),
+            )
+            return True
+
+        # Check private exclusion
+        if self.config.exclude_private and meta.get("invite_only", False):
+            _increment_blocked("stream_id")
+            logger.warning(
+                "Blocked stream ID %d (%s): private channel excluded by policy",
+                stream_id,
+                meta.get("name", "unknown"),
+            )
+            return False
+
+        name = meta.get("name", "")
+        allowed = self.is_channel_allowed(name)
+        if not allowed:
+            _increment_blocked("stream_id")
+            logger.warning(
+                "Blocked stream ID %d (%s): channel excluded by policy",
+                stream_id,
+                name,
+            )
+        return allowed
+
     def is_channel_allowed(self, channel_name: str) -> bool:
         """Check if a channel name passes the filter.
 
         Returns True if the channel is allowed, False if it should be excluded.
         When filtering is disabled, always returns True.
+
+        Note: This checks the JD name filter only. For private channel exclusion
+        on name-based paths, use is_channel_allowed_with_privacy() when stream
+        metadata is available.
         """
         if not self.config.enabled:
             return True
@@ -160,7 +255,25 @@ class ChannelFilter:
         # 6. No allow_areas restriction — all JD channels pass
         return True
 
-    def is_stream_allowed(self, stream: dict) -> bool:
+    def is_channel_allowed_with_privacy(self, channel_name: str) -> bool:
+        """Check channel name AND private status using stream index.
+
+        Falls back to is_channel_allowed() if stream is not in the index.
+        """
+        if not self.config.enabled:
+            return True
+
+        # Look up private status from index by name
+        if self.config.exclude_private:
+            for meta in self._stream_index.values():
+                if meta.get("name") == channel_name:
+                    if meta.get("invite_only", False):
+                        return False
+                    break
+
+        return self.is_channel_allowed(channel_name)
+
+    def is_stream_allowed(self, stream: dict[str, Any]) -> bool:
         """Check if a stream dict passes the filter.
 
         Handles both channel name filtering and private channel exclusion.
@@ -175,17 +288,22 @@ class ChannelFilter:
         name = stream.get("name", "")
         return self.is_channel_allowed(name)
 
-    def filter_streams(self, streams: list[dict]) -> list[dict]:
+    def filter_streams(self, streams: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Filter a list of stream dicts, removing excluded channels."""
         if not self.config.enabled:
             return streams
-        return [s for s in streams if self.is_stream_allowed(s)]
+        before = len(streams)
+        result = [s for s in streams if self.is_stream_allowed(s)]
+        blocked = before - len(result)
+        if blocked > 0:
+            _blocked_counts["stream_list"] = _blocked_counts.get("stream_list", 0) + blocked
+        return result
 
-    def filter_messages(self, messages: list[dict]) -> list[dict]:
+    def filter_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Filter a list of message dicts, removing messages from excluded channels.
 
-        Only filters stream-type messages. Private/DM messages are handled
-        by the exclude_dms setting.
+        Checks both JD name rules and private channel status for stream messages.
+        DM messages are handled by the exclude_dms setting.
         """
         if not self.config.enabled:
             return messages
@@ -198,18 +316,25 @@ class ChannelFilter:
             if msg_type == "private":
                 if not self.config.exclude_dms:
                     filtered.append(msg)
+                else:
+                    _increment_blocked("read")
                 continue
 
-            # Stream messages — check channel name
+            # Stream messages — check channel name AND privacy
             recipient = msg.get("display_recipient", "")
-            if isinstance(recipient, str) and self.is_channel_allowed(recipient):
+            if isinstance(recipient, str) and self.is_channel_allowed_with_privacy(recipient):
                 filtered.append(msg)
+            elif isinstance(recipient, str):
+                _increment_blocked("read")
 
         return filtered
 
 
 def load_filter_config_from_env() -> ChannelFilterConfig:
     """Load channel filter configuration from environment variables.
+
+    Raises ValueError if area range env vars contain malformed values.
+    The server should catch this and fail with a clear message.
 
     Environment variables:
         ZULIPCHAT_CHANNEL_FILTER_ENABLED: "true" to enable (default: false)
@@ -252,6 +377,9 @@ def init_channel_filter(config: ChannelFilterConfig | None = None) -> ChannelFil
 
     Returns:
         The initialized ChannelFilter instance.
+
+    Raises:
+        ValueError: If environment variables contain malformed area ranges.
     """
     global _channel_filter
     if config is None:

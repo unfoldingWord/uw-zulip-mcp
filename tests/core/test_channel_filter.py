@@ -5,11 +5,11 @@ import pytest
 from zulipchat_mcp.core.channel_filter import (
     ChannelFilter,
     ChannelFilterConfig,
+    get_blocked_counts,
     parse_area_ranges,
     parse_channel_list,
     parse_jd_prefix,
 )
-
 
 # --- parse_jd_prefix tests ---
 
@@ -384,3 +384,138 @@ class TestRealisticConfig:
     def test_area_00_without_explicit_include_blocked(self, uw_filter):
         # Area 00 is not in jd_allow_areas, so unless explicitly included, blocked
         assert uw_filter.is_channel_allowed("00.22 Some New Channel") is False
+
+
+# --- Stream ID enforcement tests (P0 fix) ---
+
+
+class TestStreamIdEnforcement:
+    """Tests for stream ID-based access control via stream metadata index."""
+
+    @pytest.fixture
+    def filter_with_index(self):
+        cf = ChannelFilter(
+            ChannelFilterConfig(
+                enabled=True,
+                jd_allow_areas=[(30, 99)],
+                channel_exclude={"00.16 Prayer Requests"},
+                exclude_private=True,
+            )
+        )
+        # Populate index as if get_streams returned these
+        cf.update_stream_index([
+            {"stream_id": 1, "name": "30 Infrastructure", "invite_only": False},
+            {"stream_id": 2, "name": "00.16 Prayer Requests", "invite_only": False},
+            {"stream_id": 3, "name": "09.40 - 2026 All Staff", "invite_only": True},
+            {"stream_id": 4, "name": "84 BT Servant", "invite_only": False},
+            {"stream_id": 5, "name": "Helpdesk - ST", "invite_only": False},
+        ])
+        return cf
+
+    def test_allowed_stream_by_id(self, filter_with_index):
+        assert filter_with_index.is_stream_id_allowed(1) is True  # 30 Infrastructure
+        assert filter_with_index.is_stream_id_allowed(4) is True  # 84 BT Servant
+
+    def test_blocked_stream_by_id_name_filter(self, filter_with_index):
+        assert filter_with_index.is_stream_id_allowed(2) is False  # 00.16 Prayer Requests
+
+    def test_blocked_stream_by_id_private(self, filter_with_index):
+        assert filter_with_index.is_stream_id_allowed(3) is False  # private channel
+
+    def test_blocked_stream_by_id_non_jd(self, filter_with_index):
+        assert filter_with_index.is_stream_id_allowed(5) is False  # Helpdesk - ST
+
+    def test_unknown_stream_id_allowed(self, filter_with_index):
+        # Unknown IDs allowed (fail-open) to avoid breaking tools before cache warmup
+        assert filter_with_index.is_stream_id_allowed(999) is True
+
+    def test_index_update_idempotent(self, filter_with_index):
+        # Updating index again should not break anything
+        filter_with_index.update_stream_index([
+            {"stream_id": 1, "name": "30 Infrastructure", "invite_only": False},
+        ])
+        assert filter_with_index.is_stream_id_allowed(1) is True
+
+
+# --- Privacy-aware name check (P0 fix) ---
+
+
+class TestPrivacyAwareNameCheck:
+    """Tests for is_channel_allowed_with_privacy()."""
+
+    def test_private_stream_blocked_by_name_lookup(self):
+        cf = ChannelFilter(
+            ChannelFilterConfig(
+                enabled=True,
+                jd_allow_areas=[(0, 99)],
+                exclude_private=True,
+            )
+        )
+        cf.update_stream_index([
+            {"stream_id": 10, "name": "09.40 - 2026 All Staff", "invite_only": True},
+            {"stream_id": 11, "name": "30 Infrastructure", "invite_only": False},
+        ])
+        # Name passes JD filter but is private — should be blocked
+        assert cf.is_channel_allowed_with_privacy("09.40 - 2026 All Staff") is False
+        assert cf.is_channel_allowed_with_privacy("30 Infrastructure") is True
+
+    def test_falls_back_when_not_in_index(self):
+        cf = ChannelFilter(
+            ChannelFilterConfig(
+                enabled=True,
+                jd_allow_areas=[(30, 99)],
+                exclude_private=True,
+            )
+        )
+        # No index populated — falls back to name-only check
+        assert cf.is_channel_allowed_with_privacy("30 Infrastructure") is True
+        assert cf.is_channel_allowed_with_privacy("01 Knowledge base") is False
+
+
+# --- Env parsing error handling (P1 fix) ---
+
+
+class TestEnvParsingErrors:
+    def test_malformed_range_raises_valueerror(self):
+        with pytest.raises(ValueError, match="Invalid JD area range"):
+            parse_area_ranges("abc")
+
+    def test_partially_malformed_range_raises(self):
+        with pytest.raises(ValueError, match="Invalid JD area range"):
+            parse_area_ranges("30-99,abc,42")
+
+    def test_empty_range_element_ok(self):
+        # Trailing comma should not crash
+        assert parse_area_ranges("30-99,") == [(30, 99)]
+
+    def test_dash_in_non_numeric_raises(self):
+        with pytest.raises(ValueError, match="Invalid JD area range"):
+            parse_area_ranges("ab-cd")
+
+
+# --- Blocked-by-policy counters (observability) ---
+
+
+class TestBlockedCounters:
+    def test_counters_exist(self):
+        counts = get_blocked_counts()
+        assert "send" in counts
+        assert "read" in counts
+        assert "stream_id" in counts
+
+    def test_filter_messages_increments_read_counter(self):
+        cf = ChannelFilter(
+            ChannelFilterConfig(
+                enabled=True,
+                jd_allow_areas=[(30, 99)],
+                exclude_dms=True,
+            )
+        )
+        before = get_blocked_counts()["read"]
+        cf.filter_messages([
+            {"type": "private", "display_recipient": [{"email": "a@b.com"}], "content": "dm"},
+            {"type": "stream", "display_recipient": "01 Knowledge base", "content": "x"},
+        ])
+        after = get_blocked_counts()["read"]
+        # Both DM and out-of-range stream should increment
+        assert after > before

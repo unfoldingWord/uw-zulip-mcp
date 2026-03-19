@@ -1,5 +1,6 @@
 """Zulip API client wrapper for MCP integration."""
 
+import logging
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -11,6 +12,8 @@ from zulip import Client
 from ..config import ConfigManager
 from .cache import cache_decorator, stream_cache, user_cache
 from .channel_filter import get_channel_filter, is_channel_allowed
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -159,10 +162,17 @@ class ZulipClientWrapper:
         topic: str | None = None,
     ) -> dict[str, Any]:
         """Send a message to a stream or user."""
-        # Channel filter: block writes to excluded channels
+        # Channel filter: block writes to excluded channels (checks name + privacy)
         if message_type == "stream":
             stream_name = to if isinstance(to, str) else to[0]
-            if not is_channel_allowed(stream_name):
+            cf = get_channel_filter()
+            if not cf.is_channel_allowed_with_privacy(stream_name):
+                from .channel_filter import _increment_blocked
+
+                _increment_blocked("send")
+                logger.warning(
+                    "Blocked send to '%s': channel excluded by policy", stream_name
+                )
                 return {
                     "result": "error",
                     "msg": f"Channel '{stream_name}' is outside the configured channel filter scope",
@@ -349,8 +359,10 @@ class ZulipClientWrapper:
             # Check cache first
             cached_streams = stream_cache.get_streams()
             if cached_streams is not None:
-                # Channel filter applied to cached results too
-                filtered = get_channel_filter().filter_streams(cached_streams)
+                # Update index from cache (for ID-based lookups) then filter
+                cf = get_channel_filter()
+                cf.update_stream_index(cached_streams)
+                filtered = cf.filter_streams(cached_streams)
                 return {"result": "success", "streams": filtered}
 
         # Fetch from API
@@ -364,12 +376,12 @@ class ZulipClientWrapper:
         if response["result"] == "success":
             stream_cache.set_streams(response["streams"])
 
-        # Channel filter: remove excluded channels from results
-        # Applied after cache so filter config changes take effect without cache invalidation
+        # Channel filter: update stream metadata index BEFORE filtering
+        # so ID-based lookups work for all streams (including blocked ones)
         if response.get("result") == "success" and "streams" in response:
-            response["streams"] = get_channel_filter().filter_streams(
-                response["streams"]
-            )
+            cf = get_channel_filter()
+            cf.update_stream_index(response["streams"])
+            response["streams"] = cf.filter_streams(response["streams"])
 
         return response
 
@@ -388,6 +400,12 @@ class ZulipClientWrapper:
 
     def get_stream_topics(self, stream_id: int) -> dict[str, Any]:
         """Get recent topics for a stream."""
+        # Channel filter: block by stream ID
+        if not get_channel_filter().is_stream_id_allowed(stream_id):
+            return {
+                "result": "error",
+                "msg": f"Stream {stream_id} is outside the configured channel filter scope",
+            }
         return self.client.get_stream_topics(stream_id)
 
     def add_reaction(self, message_id: int, emoji_name: str) -> dict[str, Any]:
@@ -507,6 +525,12 @@ class ZulipClientWrapper:
         Note: SDK's get_subscribers expects stream name, not ID.
         We use call_endpoint directly with stream_id for efficiency.
         """
+        # Channel filter: block by stream ID
+        if not get_channel_filter().is_stream_id_allowed(stream_id):
+            return {
+                "result": "error",
+                "msg": f"Stream {stream_id} is outside the configured channel filter scope",
+            }
         return self.client.call_endpoint(
             f"streams/{stream_id}/members", method="GET", request={}
         )

@@ -116,11 +116,19 @@ def main() -> None:
         logger.warning("RUNNING IN UNSAFE MODE - Dangerous tools enabled")
 
     # Initialize channel filter (JD taxonomy-based access control)
-    channel_filter = init_channel_filter()
-    if channel_filter.config.enabled:
-        logger.info("Channel filter ENABLED - access restricted by configuration")
-    else:
-        logger.info("Channel filter disabled - all channels accessible")
+    try:
+        channel_filter = init_channel_filter()
+        if channel_filter.config.enabled:
+            logger.info("Channel filter ENABLED - access restricted by configuration")
+        else:
+            logger.info("Channel filter disabled - all channels accessible")
+    except ValueError as e:
+        logger.error(
+            "Channel filter configuration error: %s. "
+            "Fix the environment variables or remove them to disable filtering.",
+            e,
+        )
+        return
 
     # Initialize database (optional for agent features)
     if database_available:
