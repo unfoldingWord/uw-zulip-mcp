@@ -7,6 +7,7 @@ from fastmcp import FastMCP
 
 from . import __version__
 from .config import init_config_manager
+from .core.channel_filter import init_channel_filter
 from .core.security import set_unsafe_mode
 
 # Optional: Anthropic sampling handler for LLM analytics fallback
@@ -76,6 +77,16 @@ def main() -> None:
         action="store_true",
         help="Register all tools (~55) instead of core set (19).",
     )
+    parser.add_argument(
+        "--read-only",
+        action="store_true",
+        help="Restrict to read/search tools only. No sending, editing, or reactions.",
+    )
+    parser.add_argument(
+        "--disable-agents",
+        action="store_true",
+        help="Disable all agent tools (registration, messaging, AFK, events).",
+    )
 
     args = parser.parse_args()
 
@@ -103,6 +114,13 @@ def main() -> None:
     set_unsafe_mode(args.unsafe)
     if args.unsafe:
         logger.warning("RUNNING IN UNSAFE MODE - Dangerous tools enabled")
+
+    # Initialize channel filter (JD taxonomy-based access control)
+    channel_filter = init_channel_filter()
+    if channel_filter.config.enabled:
+        logger.info("Channel filter ENABLED - access restricted by configuration")
+    else:
+        logger.info("Channel filter disabled - all channels accessible")
 
     # Initialize database (optional for agent features)
     if database_available:
@@ -136,21 +154,34 @@ def main() -> None:
 
     logger.info("FastMCP initialized successfully")
 
-    # Determine tool mode
+    # Determine tool modes
     extended = args.extended_tools or os.getenv("ZULIPCHAT_EXTENDED_TOOLS", "0") in (
         "1",
         "true",
         "True",
     )
+    read_only = args.read_only or os.getenv("ZULIPCHAT_READ_ONLY", "0") in (
+        "1",
+        "true",
+        "True",
+    )
+    disable_agents = args.disable_agents or os.getenv(
+        "ZULIPCHAT_DISABLE_AGENTS", "0"
+    ) in ("1", "true", "True")
 
-    # Register tools
-    register_core_tools(mcp)
+    if read_only:
+        logger.info("READ-ONLY MODE - write tools will not be registered")
+    if disable_agents:
+        logger.info("AGENTS DISABLED - agent tools will not be registered")
+
+    # Register tools with mode restrictions
+    register_core_tools(mcp, read_only=read_only, disable_agents=disable_agents)
 
     if extended:
-        register_extended_tools(mcp)
-        logger.info("Registered extended tool set (~55 tools)")
+        register_extended_tools(mcp, read_only=read_only, disable_agents=disable_agents)
+        logger.info("Registered extended tool set")
     else:
-        logger.info("Registered core tool set (19 tools)")
+        logger.info("Registered core tool set")
 
     # Warm user/stream caches for fast fuzzy resolution
     try:
@@ -165,7 +196,8 @@ def main() -> None:
 
     # Initialize background services singleton. The listener starts eagerly only with
     # --enable-listener; otherwise it lazy-starts on first agent tool call via ensure_listener().
-    if service_manager_available:
+    # Skip entirely if agents are disabled — no background services needed.
+    if service_manager_available and not disable_agents:
         try:
             svc = init_service_manager(config_manager, enable_listener=args.enable_listener)
             if args.enable_listener:
@@ -176,6 +208,8 @@ def main() -> None:
             )
         except Exception as e:
             logger.warning(f"Could not initialize background services: {e}")
+    elif disable_agents:
+        logger.info("Background services skipped (agents disabled)")
 
     logger.info("Starting ZulipChat MCP server...")
     mcp.run()

@@ -10,6 +10,7 @@ from zulip import Client
 
 from ..config import ConfigManager
 from .cache import cache_decorator, stream_cache, user_cache
+from .channel_filter import get_channel_filter, is_channel_allowed
 
 
 @dataclass
@@ -158,6 +159,24 @@ class ZulipClientWrapper:
         topic: str | None = None,
     ) -> dict[str, Any]:
         """Send a message to a stream or user."""
+        # Channel filter: block writes to excluded channels
+        if message_type == "stream":
+            stream_name = to if isinstance(to, str) else to[0]
+            if not is_channel_allowed(stream_name):
+                return {
+                    "result": "error",
+                    "msg": f"Channel '{stream_name}' is outside the configured channel filter scope",
+                }
+
+        # Channel filter: block DMs if configured
+        if message_type == "private":
+            cf = get_channel_filter()
+            if cf.config.enabled and cf.config.exclude_dms:
+                return {
+                    "result": "error",
+                    "msg": "Direct messages are disabled by channel filter configuration",
+                }
+
         request: dict[str, Any] = {"type": message_type, "content": content}
 
         if message_type == "stream":
@@ -206,7 +225,15 @@ class ZulipClientWrapper:
         if anchor == "date" and anchor_date:
             request["anchor_date"] = anchor_date
 
-        return self.client.get_messages(request)
+        response = self.client.get_messages(request)
+
+        # Channel filter: remove messages from excluded channels/DMs
+        if response.get("result") == "success" and "messages" in response:
+            response["messages"] = get_channel_filter().filter_messages(
+                response["messages"]
+            )
+
+        return response
 
     def get_messages(
         self,
@@ -261,6 +288,14 @@ class ZulipClientWrapper:
         Uses Zulip's anchor="date" + anchor_date parameter (Zulip 12.0+, feature level 445)
         to position the anchor at the cutoff time, then fetches messages after that point.
         """
+        # Channel filter: block reads from excluded channels
+        if stream_name and not is_channel_allowed(stream_name):
+            return {
+                "result": "success",
+                "messages": [],
+                "msg": f"Channel '{stream_name}' is outside the configured channel filter scope",
+            }
+
         narrow: list[dict[str, Any]] = []
         if stream_name:
             narrow.append({"operator": "stream", "operand": stream_name})
@@ -314,7 +349,9 @@ class ZulipClientWrapper:
             # Check cache first
             cached_streams = stream_cache.get_streams()
             if cached_streams is not None:
-                return {"result": "success", "streams": cached_streams}
+                # Channel filter applied to cached results too
+                filtered = get_channel_filter().filter_streams(cached_streams)
+                return {"result": "success", "streams": filtered}
 
         # Fetch from API
         kwargs: dict[str, Any] = {"include_subscribed": include_subscribed}
@@ -326,6 +363,14 @@ class ZulipClientWrapper:
         response = self.client.get_streams(**kwargs)
         if response["result"] == "success":
             stream_cache.set_streams(response["streams"])
+
+        # Channel filter: remove excluded channels from results
+        # Applied after cache so filter config changes take effect without cache invalidation
+        if response.get("result") == "success" and "streams" in response:
+            response["streams"] = get_channel_filter().filter_streams(
+                response["streams"]
+            )
+
         return response
 
     def get_users(self) -> dict[str, Any]:
