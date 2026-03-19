@@ -206,6 +206,64 @@ src/zulipchat_mcp/
 
 Built on [FastMCP](https://github.com/jlowin/fastmcp) with async-first design, [DuckDB](https://duckdb.org) for agent state persistence, and smart user/stream caching for fast fuzzy resolution.
 
+## Channel Filter & Access Controls
+
+For organizational deployments, restrict which Zulip channels the MCP server can access.
+
+### Channel Filtering (Johnny Decimal)
+
+Filter channels by their JD naming prefix (`XX` or `XX.YY`):
+
+```env
+ZULIPCHAT_CHANNEL_FILTER_ENABLED=true
+ZULIPCHAT_JD_ALLOW_AREAS=01,02,14,30-99       # JD area ranges to allow
+ZULIPCHAT_JD_DENY_AREAS=                        # JD area ranges to deny (overrides allow)
+ZULIPCHAT_CHANNEL_INCLUDE=00.17 All unfoldingWord  # Always include these channels
+ZULIPCHAT_CHANNEL_EXCLUDE=00.16 Prayer Requests    # Always exclude these channels
+ZULIPCHAT_EXCLUDE_NON_JD=true                   # Exclude channels without JD prefix
+ZULIPCHAT_EXCLUDE_DMS=true                      # Exclude direct messages
+ZULIPCHAT_EXCLUDE_PRIVATE=true                  # Exclude private channels
+ZULIPCHAT_DENY_UNKNOWN_STREAM_IDS=false         # Set true for fail-closed on unknown IDs
+```
+
+**Evaluation order:** explicit exclude > explicit include > JD deny areas > JD allow areas > non-JD default.
+
+Filter is enforced at the client wrapper level across all access paths (stream listing, message search, send, stream-ID tools). No tool can bypass it.
+
+### Read-Only Mode
+
+Restrict to search and read operations only:
+
+```bash
+zulipchat-mcp --read-only --zulip-config-file ~/.zuliprc
+```
+
+Or via environment: `ZULIPCHAT_READ_ONLY=true`
+
+In read-only mode, write tools (send, edit, react, flag, upload) are not registered.
+
+### Disable Agent Tools
+
+Remove all agent/autonomous operation tools:
+
+```bash
+zulipchat-mcp --disable-agents --zulip-config-file ~/.zuliprc
+```
+
+Or via environment: `ZULIPCHAT_DISABLE_AGENTS=true`
+
+Agent tools are not registered and background services are not started.
+
+### Recommended Deployment
+
+For a locked-down organizational deployment:
+
+```bash
+zulipchat-mcp --read-only --disable-agents --zulip-config-file ~/.zuliprc
+```
+
+With channel filtering configured via environment variables. The server displays a privacy notice on startup summarizing the active configuration. Suppress with `ZULIPCHAT_QUIET=true`.
+
 ## Privacy
 
 - **No data collection** — nothing leaves your machine except Zulip API calls
