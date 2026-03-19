@@ -2,6 +2,7 @@
 
 import difflib
 import hashlib
+import os
 import time
 from collections.abc import Callable as TypingCallable
 from functools import lru_cache, wraps
@@ -146,7 +147,8 @@ class UserCache:
             return {"email": email, "matched": q, "confidence": 1.0}
 
         # Fuzzy match
-        matches = difflib.get_close_matches(q, self._name_index.keys(), n=1, cutoff=0.6)
+        cutoff = float(os.getenv("ZULIPCHAT_FUZZY_MATCH_CUTOFF", "0.6"))
+        matches = difflib.get_close_matches(q, self._name_index.keys(), n=1, cutoff=cutoff)
         if matches:
             matched = matches[0]
             email = self._name_index[matched]
@@ -241,10 +243,10 @@ def async_cache_decorator(
     return decorator
 
 
-# Global cache instances
-message_cache = MessageCache(ttl=300)
-stream_cache = StreamCache(ttl=600)
-user_cache = UserCache(ttl=900)
+# Global cache instances — TTLs configurable via environment variables
+message_cache = MessageCache(ttl=int(os.getenv("ZULIPCHAT_CACHE_TTL_MESSAGES", "300")))
+stream_cache = StreamCache(ttl=int(os.getenv("ZULIPCHAT_CACHE_TTL_STREAMS", "600")))
+user_cache = UserCache(ttl=int(os.getenv("ZULIPCHAT_CACHE_TTL_USERS", "900")))
 
 
 # LRU cache for frequently accessed data

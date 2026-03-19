@@ -5,12 +5,15 @@ Direct mapping to Zulip's event API endpoints.
 """
 
 import asyncio
+import logging
 import time
 from typing import Any
 
 from fastmcp import FastMCP
 
 from ..config import get_client
+
+logger = logging.getLogger(__name__)
 
 
 async def register_events(
@@ -184,8 +187,8 @@ async def listen_events(
                                     await http_client.post(
                                         callback_url, json={"events": events}
                                     )
-                            except Exception:
-                                pass  # Best effort
+                            except Exception as e:
+                                logger.warning("Event callback to %s failed: %s", callback_url, e)
 
                 # Sleep before next poll
                 await asyncio.sleep(poll_interval)
@@ -194,8 +197,8 @@ async def listen_events(
             # Cleanup: deregister queue
             try:
                 await deregister_events(queue_id)
-            except Exception:
-                pass  # Best effort cleanup
+            except Exception as e:
+                logger.warning("Event queue cleanup failed for %s: %s", queue_id, e)
 
         return {
             "status": "success",

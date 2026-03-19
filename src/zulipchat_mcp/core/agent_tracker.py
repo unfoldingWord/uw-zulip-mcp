@@ -119,9 +119,9 @@ class AgentTracker:
                 data = json.loads(self.AGENT_REGISTRY_FILE.read_text()) or []
             data.append(record)
             self.AGENT_REGISTRY_FILE.write_text(json.dumps(data, indent=2))
-        except Exception:
+        except Exception as e:
             # Best-effort; avoid raising in tracking
-            pass
+            logger.warning("Failed to persist agent registry: %s", e)
 
     def format_agent_message(
         self, content: str, agent_type: str, require_response: bool = False

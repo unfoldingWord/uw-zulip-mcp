@@ -79,8 +79,8 @@ class ServiceManager:
 
         try:
             asyncio.run(listener.stop())
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Error stopping message listener: %s", e)
 
         self.listener_ref["listener"] = None
         self.listener_ref["thread"] = None
