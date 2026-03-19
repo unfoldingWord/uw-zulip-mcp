@@ -179,6 +179,7 @@ class UserCache:
 
         # Fuzzy match
         cutoff = _float_env("ZULIPCHAT_FUZZY_MATCH_CUTOFF", 0.6)
+        cutoff = max(0.0, min(1.0, cutoff))
         matches = difflib.get_close_matches(q, self._name_index.keys(), n=1, cutoff=cutoff)
         if matches:
             matched = matches[0]
