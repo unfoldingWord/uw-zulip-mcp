@@ -219,6 +219,52 @@ def main() -> None:
     elif disable_agents:
         logger.info("Background services skipped (agents disabled)")
 
+    # Privacy notice on stderr (visible to operator, not to MCP client)
+    quiet = os.getenv("ZULIPCHAT_QUIET", "0") in ("1", "true", "True")
+    if not quiet:
+        import sys
+
+        lines = [
+            "",
+            "=" * 60,
+            "  ZulipChat MCP Server — Privacy Notice",
+            "=" * 60,
+            "",
+            "  Messages accessed via this MCP server will be sent to",
+            "  your configured LLM provider for processing. Review your",
+            "  provider's data retention policy before use.",
+            "",
+        ]
+        if channel_filter.config.enabled:
+            n_allow = len(channel_filter.config.jd_allow_areas)
+            n_exclude = len(channel_filter.config.channel_exclude)
+            n_include = len(channel_filter.config.channel_include)
+            lines.append("  Channel filter:  ENABLED")
+            if n_allow:
+                areas = ", ".join(
+                    f"{lo}-{hi}" if lo != hi else str(lo)
+                    for lo, hi in channel_filter.config.jd_allow_areas
+                )
+                lines.append(f"  Allowed areas:   {areas}")
+            if n_exclude:
+                lines.append(f"  Excluded:        {n_exclude} channel(s)")
+            if n_include:
+                lines.append(f"  Included:        {n_include} override(s)")
+            lines.append(f"  Private chans:   {'excluded' if channel_filter.config.exclude_private else 'allowed'}")
+            lines.append(f"  DMs:             {'excluded' if channel_filter.config.exclude_dms else 'allowed'}")
+            lines.append(f"  Non-JD chans:    {'excluded' if channel_filter.config.exclude_non_jd else 'allowed'}")
+        else:
+            lines.append("  Channel filter:  DISABLED (all channels accessible)")
+
+        lines.append(f"  Read-only mode:  {'YES' if read_only else 'no'}")
+        lines.append(f"  Agent tools:     {'disabled' if disable_agents else 'enabled'}")
+        lines.append("")
+        lines.append("=" * 60)
+        lines.append("")
+
+        sys.stderr.write("\n".join(lines) + "\n")
+        sys.stderr.flush()
+
     logger.info("Starting ZulipChat MCP server...")
     mcp.run()
 
