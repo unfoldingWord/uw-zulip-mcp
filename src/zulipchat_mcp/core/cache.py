@@ -2,11 +2,42 @@
 
 import difflib
 import hashlib
+import logging
 import os
 import time
 from collections.abc import Callable as TypingCallable
 from functools import lru_cache, wraps
 from typing import Any, TypeVar, cast
+
+logger = logging.getLogger(__name__)
+
+
+def _int_env(key: str, default: int) -> int:
+    """Parse an integer from env var with safe fallback."""
+    val = os.getenv(key, "")
+    if not val:
+        return default
+    try:
+        return int(val)
+    except ValueError:
+        logger.warning(
+            "Invalid value for %s: '%s' — using default %d", key, val, default
+        )
+        return default
+
+
+def _float_env(key: str, default: float) -> float:
+    """Parse a float from env var with safe fallback."""
+    val = os.getenv(key, "")
+    if not val:
+        return default
+    try:
+        return float(val)
+    except ValueError:
+        logger.warning(
+            "Invalid value for %s: '%s' — using default %s", key, val, default
+        )
+        return default
 
 F = TypeVar("F", bound=TypingCallable[..., Any])
 
@@ -147,7 +178,7 @@ class UserCache:
             return {"email": email, "matched": q, "confidence": 1.0}
 
         # Fuzzy match
-        cutoff = float(os.getenv("ZULIPCHAT_FUZZY_MATCH_CUTOFF", "0.6"))
+        cutoff = _float_env("ZULIPCHAT_FUZZY_MATCH_CUTOFF", 0.6)
         matches = difflib.get_close_matches(q, self._name_index.keys(), n=1, cutoff=cutoff)
         if matches:
             matched = matches[0]
@@ -244,9 +275,9 @@ def async_cache_decorator(
 
 
 # Global cache instances — TTLs configurable via environment variables
-message_cache = MessageCache(ttl=int(os.getenv("ZULIPCHAT_CACHE_TTL_MESSAGES", "300")))
-stream_cache = StreamCache(ttl=int(os.getenv("ZULIPCHAT_CACHE_TTL_STREAMS", "600")))
-user_cache = UserCache(ttl=int(os.getenv("ZULIPCHAT_CACHE_TTL_USERS", "900")))
+message_cache = MessageCache(ttl=_int_env("ZULIPCHAT_CACHE_TTL_MESSAGES", 300))
+stream_cache = StreamCache(ttl=_int_env("ZULIPCHAT_CACHE_TTL_STREAMS", 600))
+user_cache = UserCache(ttl=_int_env("ZULIPCHAT_CACHE_TTL_USERS", 900))
 
 
 # LRU cache for frequently accessed data
