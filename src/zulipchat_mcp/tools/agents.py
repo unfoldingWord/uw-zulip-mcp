@@ -199,6 +199,8 @@ def wait_for_response(request_id: str, timeout: int | None = None) -> dict[str, 
     with Timer("zulip_mcp_tool_duration_seconds", {"tool": "wait_for_response"}):
         track_tool_call("wait_for_response")
         try:
+            from ..core.progress import UwProgressIndicator
+
             ensure_listener()
             db = DatabaseManager()
             default_timeout = int(os.getenv("ZULIPCHAT_AGENT_TIMEOUT", "300"))
@@ -209,17 +211,23 @@ def wait_for_response(request_id: str, timeout: int | None = None) -> dict[str, 
                 "Waiting for response to request %s (timeout: %ds)",
                 request_id, timeout_seconds,
             )
+
+            # Start uW branded progress indicator (TTY only, no-op otherwise)
+            indicator = UwProgressIndicator(total_seconds=timeout_seconds)
+            indicator.start()
             poll_count = 0
 
             while time.time() - start < timeout_seconds:
                 result = db.get_input_request(request_id)
 
                 if not result:
+                    indicator.stop(success=False)
                     return {"status": "error", "error": "Request not found"}
 
                 status = result.get("status")
                 if status in ["answered", "cancelled"]:
                     elapsed = int(time.time() - start)
+                    indicator.stop(success=True)
                     logger.info(
                         "Response received for %s after %ds (status: %s)",
                         request_id, elapsed, status,
@@ -240,7 +248,7 @@ def wait_for_response(request_id: str, timeout: int | None = None) -> dict[str, 
                     }
 
                 poll_count += 1
-                # Log progress every 30 seconds
+                # Log progress every 30 seconds (structured log, not animation)
                 if poll_count % 30 == 0:
                     elapsed = int(time.time() - start)
                     remaining = timeout_seconds - elapsed
@@ -252,6 +260,7 @@ def wait_for_response(request_id: str, timeout: int | None = None) -> dict[str, 
                 time.sleep(1)
 
             # Timeout reached
+            indicator.stop(success=False)
             db.update_input_request(request_id, status="timeout")
             logger.warning(
                 "Response timeout for %s after %ds", request_id, timeout_seconds
