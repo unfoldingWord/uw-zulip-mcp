@@ -198,6 +198,7 @@ def wait_for_response(request_id: str, timeout: int | None = None) -> dict[str, 
     """
     with Timer("zulip_mcp_tool_duration_seconds", {"tool": "wait_for_response"}):
         track_tool_call("wait_for_response")
+        indicator = None
         try:
             from ..core.progress import UwProgressIndicator
 
@@ -274,6 +275,10 @@ def wait_for_response(request_id: str, timeout: int | None = None) -> dict[str, 
         except Exception as e:
             track_tool_error("wait_for_response", type(e).__name__)
             return {"status": "error", "error": str(e)}
+        finally:
+            # Ensure cursor is restored even on unexpected exceptions
+            if indicator is not None:
+                indicator.stop(success=False)
 
 
 def send_agent_status(

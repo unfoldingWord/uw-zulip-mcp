@@ -8,10 +8,13 @@ Audit events are emitted via Python's standard logging at a configurable
 level (default: INFO) to a dedicated "zulipchat_mcp.audit" logger. This
 allows operators to route audit logs to a separate file or service via
 standard logging configuration.
+
+All event fields are serialized via json.dumps to prevent log injection.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import time
@@ -22,17 +25,21 @@ from typing import Any
 audit_logger = logging.getLogger("zulipchat_mcp.audit")
 
 _AUDIT_ENABLED: bool = False
+_AUDIT_INITIALIZED: bool = False
 
 
 def init_audit_logging() -> None:
     """Initialize audit logging from environment configuration.
+
+    Idempotent — safe to call multiple times. Subsequent calls reconfigure
+    without duplicating handlers.
 
     Environment variables:
         ZULIPCHAT_AUDIT_ENABLED: "true" to enable (default: false)
         ZULIPCHAT_AUDIT_FILE: Path to audit log file (optional)
         ZULIPCHAT_AUDIT_LEVEL: Log level for audit events (default: INFO)
     """
-    global _AUDIT_ENABLED
+    global _AUDIT_ENABLED, _AUDIT_INITIALIZED
 
     enabled = os.getenv("ZULIPCHAT_AUDIT_ENABLED", "").lower()
     _AUDIT_ENABLED = enabled in ("true", "1", "yes", "on")
@@ -44,31 +51,39 @@ def init_audit_logging() -> None:
     level = getattr(logging, level_str, logging.INFO)
     audit_logger.setLevel(level)
 
-    # Add file handler if configured
+    # Guard against duplicate handlers on re-init
     audit_file = os.getenv("ZULIPCHAT_AUDIT_FILE")
     if audit_file:
+        # Remove any existing file handlers to prevent duplicates
+        for h in list(audit_logger.handlers):
+            if isinstance(h, logging.FileHandler):
+                audit_logger.removeHandler(h)
+                h.close()
+
         handler = logging.FileHandler(audit_file)
         handler.setFormatter(
-            logging.Formatter(
-                '{"timestamp": "%(asctime)s", "level": "%(levelname)s", %(message)s}'
-            )
+            logging.Formatter("%(message)s")
         )
         audit_logger.addHandler(handler)
-
-    # Prevent propagation to root logger if file handler is set,
-    # so audit logs only go to the audit file
-    if audit_file:
         audit_logger.propagate = False
 
-    audit_logger.info(
-        '"event": "audit_init", "audit_file": "%s"',
-        audit_file or "stderr",
-    )
+    _AUDIT_INITIALIZED = True
+
+    _log_event({"event": "audit_init", "audit_file": audit_file or "stderr"})
 
 
 def is_audit_enabled() -> bool:
     """Check if audit logging is enabled."""
     return _AUDIT_ENABLED
+
+
+def _log_event(event: dict[str, Any]) -> None:
+    """Serialize and log an audit event dict as JSON.
+
+    All values are serialized via json.dumps to prevent log injection.
+    """
+    event["timestamp_unix"] = round(time.time(), 3)
+    audit_logger.info(json.dumps(event, default=str))
 
 
 def log_tool_invocation(
@@ -95,31 +110,26 @@ def log_tool_invocation(
     if not _AUDIT_ENABLED:
         return
 
-    parts = [
-        '"event": "tool_invocation"',
-        f'"tool": "{tool_name}"',
-        f'"timestamp_unix": {time.time():.3f}',
-    ]
+    event: dict[str, Any] = {
+        "event": "tool_invocation",
+        "tool": tool_name,
+    }
 
     if stream is not None:
-        parts.append(f'"stream": "{stream}"')
+        event["stream"] = stream
     if query is not None:
         # Truncate long queries for log readability
-        q = query[:200] + "..." if len(query) > 200 else query
-        # Escape quotes in query
-        q = q.replace('"', '\\"')
-        parts.append(f'"query": "{q}"')
+        event["query"] = query[:200] + "..." if len(query) > 200 else query
     if identity is not None:
-        parts.append(f'"identity": "{identity}"')
+        event["identity"] = identity
     if blocked:
-        parts.append('"blocked": true')
+        event["blocked"] = True
         if reason:
-            parts.append(f'"reason": "{reason}"')
+            event["reason"] = reason
     if extra:
-        for k, v in extra.items():
-            parts.append(f'"{k}": "{v}"')
+        event.update(extra)
 
-    audit_logger.info(", ".join(parts))
+    _log_event(event)
 
 
 def log_channel_access(
@@ -140,16 +150,15 @@ def log_channel_access(
     if not _AUDIT_ENABLED:
         return
 
-    parts = [
-        '"event": "channel_access"',
-        f'"channel": "{channel_name}"',
-        f'"access_type": "{access_type}"',
-        f'"timestamp_unix": {time.time():.3f}',
-    ]
+    event: dict[str, Any] = {
+        "event": "channel_access",
+        "channel": channel_name,
+        "access_type": access_type,
+    }
 
     if identity is not None:
-        parts.append(f'"identity": "{identity}"')
+        event["identity"] = identity
     if message_count is not None:
-        parts.append(f'"message_count": {message_count}')
+        event["message_count"] = message_count
 
-    audit_logger.info(", ".join(parts))
+    _log_event(event)
