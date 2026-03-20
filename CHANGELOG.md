@@ -4,6 +4,49 @@ All notable changes to ZulipChat MCP are documented in this file.
 
 ## [Unreleased]
 
+## [0.7.0-uw] - 2026-03-19
+
+unfoldingWord organizational fork. All changes are additive — upstream compatibility preserved.
+
+### Added
+- **Channel filtering (Johnny Decimal)** — Deterministic access control based on JD naming conventions. Channels filtered by `XX`/`XX.YY` prefix with area-range allowlists/denylists, individual overrides, and private channel exclusion. Enforced at client wrapper level across all access paths (stream listing, search, send, read, stream-ID tools). 60 dedicated tests.
+- **Read-only mode** — `--read-only` flag / `ZULIPCHAT_READ_ONLY=true`. Write tools are not registered at all, not just blocked.
+- **Agent disabling** — `--disable-agents` flag / `ZULIPCHAT_DISABLE_AGENTS=true`. Agent tools not registered, background services not started.
+- **DM and private channel exclusion** — `ZULIPCHAT_EXCLUDE_DMS` and `ZULIPCHAT_EXCLUDE_PRIVATE` with safe defaults (both excluded).
+- **Audit logging** — Structured JSON audit trail of tool invocations and channel access. Serialized via `json.dumps` (injection-safe). Configurable output file and log level. Never logs message content.
+- **Startup privacy notice** — Data flow warning on stderr at server start, summarizing active filter configuration. Suppressible with `ZULIPCHAT_QUIET=true`.
+- **Configurable cache TTLs** — `ZULIPCHAT_CACHE_TTL_MESSAGES`, `ZULIPCHAT_CACHE_TTL_STREAMS`, `ZULIPCHAT_CACHE_TTL_USERS` env vars.
+- **Configurable fuzzy match cutoff** — `ZULIPCHAT_FUZZY_MATCH_CUTOFF` (clamped to 0.0-1.0).
+- **Configurable agent timeout** — `ZULIPCHAT_AGENT_TIMEOUT` env var with progress logging every 30s and uW branded progress indicator for TTY sessions.
+- **Stream metadata index** — ID-to-name/privacy mapping enables consistent enforcement across both name-based and ID-based access paths.
+- **Blocked-by-policy counters** — WARNING-level logging on every denied access with `get_blocked_counts()` for observability.
+- **Security scanning in CI** — Bandit step added to GitHub Actions workflow.
+- **Bot credential field validation** — `has_bot_credentials()` validates zuliprc contents (email, key, site), not just file existence.
+- **Fail-closed option for unknown stream IDs** — `ZULIPCHAT_DENY_UNKNOWN_STREAM_IDS=true`.
+
+### Fixed
+- **Stream ID bypass** — Tools operating on stream IDs (get_stream_topics, get_subscribers) now check the channel filter via stream metadata index.
+- **Private channel enforcement gap** — `exclude_private` now enforced consistently on send, read, and message filter paths via `is_channel_allowed_with_privacy()`.
+- **Silent failure paths** — Bare `pass` in except blocks replaced with `logger.warning()` in event_management, service_manager, and agent_tracker.
+- **Env config crash on invalid values** — `parse_area_ranges()` raises descriptive `ValueError`; cache TTL and fuzzy cutoff env vars degrade gracefully with warnings.
+- **Audit log injection** — All audit event fields serialized via `json.dumps` instead of string interpolation.
+- **Progress indicator cursor leak** — `finally` block guarantees cursor restore on exceptions.
+- **Duplicate audit handlers** — `init_audit_logging()` is idempotent.
+- **Lint/type issues** — All files pass ruff and mypy.
+- **Import ordering** — Fixed logger placement in agent_tracker.py and event_management.py.
+
+### Changed
+- **Tool registration refactored** — `register_core_tools()` and `register_extended_tools()` accept `read_only` and `disable_agents` parameters.
+- **CI triggers** — Workflow now runs on `develop` branch PRs (in addition to `main`).
+- **Dependencies updated** — 77 packages updated including fastmcp 3.0.2→3.1.1, duckdb 1.3.2→1.5.0, pydantic 2.11→2.12, zulip 0.9.0→0.9.1.
+
+### Tests
+- 651 tests total (up from 611 in upstream v0.6.2)
+- 60 channel filter tests (prefix parsing, area ranges, include/exclude, stream ID enforcement, privacy-aware checks, realistic deployment config)
+- 8 audit logging tests (structured output, injection safety, idempotency)
+- 12 cache env config tests (valid/invalid/boundary values)
+- 5 bot validation tests
+
 ## [0.6.2] - 2026-03-03
 
 ### Fixed
