@@ -10,12 +10,22 @@ An MCP server that connects AI assistants (Claude Code, Gemini CLI, Cursor, etc.
 
 ## Quick Start
 
+### One-command setup (recommended)
+
 ```bash
-# Read-only, filtered, no agents — recommended for org deployment
-zulipchat-mcp --read-only --disable-agents --zulip-config-file ~/.zuliprc
+./setup-uw-cowork.sh
 ```
 
-With channel filtering configured via environment:
+This checks prerequisites, creates the `.env` with channel filter config, installs dependencies, runs tests, and registers the MCP server with Claude Code — all in one step.
+
+### Manual start
+
+```bash
+# Load config and run
+./run-uw.sh
+```
+
+Or with explicit env vars:
 
 ```bash
 export ZULIPCHAT_CHANNEL_FILTER_ENABLED=true
@@ -26,7 +36,7 @@ export ZULIPCHAT_EXCLUDE_PRIVATE=true
 export ZULIPCHAT_READ_ONLY=true
 export ZULIPCHAT_DISABLE_AGENTS=true
 
-zulipchat-mcp --zulip-config-file ~/.zuliprc
+zulipchat-mcp --read-only --disable-agents --zulip-config-file ~/.zuliprc
 ```
 
 ## What We Changed (Fork Delta)
@@ -189,6 +199,13 @@ uv run pytest -q -m "not slow and not integration"   # 651 tests
 uv run ruff check .                                   # Linting
 uv run mypy src                                       # Type checking
 ```
+
+### Scripts
+
+| Script | Description |
+|--------|-------------|
+| `setup-uw-cowork.sh` | One-command setup — checks prereqs, creates `.env`, installs deps, runs tests, registers MCP with Claude Code |
+| `run-uw.sh` | Launcher — loads `.env` and starts the server with org defaults |
 
 ### Upstream Sync
 
