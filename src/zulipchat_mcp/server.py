@@ -259,6 +259,14 @@ def main() -> None:
             lines.append(f"  Private chans:   {'excluded' if channel_filter.config.exclude_private else 'allowed'}")
             lines.append(f"  DMs:             {'excluded' if channel_filter.config.exclude_dms else 'allowed'}")
             lines.append(f"  Non-JD chans:    {'excluded' if channel_filter.config.exclude_non_jd else 'allowed'}")
+            if channel_filter.config.deny_unknown_stream_ids:
+                lines.append("  Unknown IDs:     denied (fail-closed)")
+            else:
+                lines.append("  Unknown IDs:     ALLOWED (fail-open)")
+                lines.append("")
+                lines.append("  *** WARNING: Unknown stream IDs are NOT blocked. ***")
+                lines.append("  *** Set ZULIPCHAT_DENY_UNKNOWN_STREAM_IDS=true   ***")
+                lines.append("  *** for fail-closed enforcement.                  ***")
         else:
             lines.append("  Channel filter:  DISABLED (all channels accessible)")
 

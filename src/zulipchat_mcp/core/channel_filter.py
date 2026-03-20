@@ -47,7 +47,7 @@ class ChannelFilterConfig:
     exclude_non_jd: bool = True
     exclude_dms: bool = True
     exclude_private: bool = True
-    deny_unknown_stream_ids: bool = False
+    deny_unknown_stream_ids: bool = True
 
 
 def parse_area_ranges(spec: str) -> list[tuple[int, int]]:
@@ -370,7 +370,7 @@ def load_filter_config_from_env() -> ChannelFilterConfig:
         exclude_non_jd=_bool_env("ZULIPCHAT_EXCLUDE_NON_JD", default=True),
         exclude_dms=_bool_env("ZULIPCHAT_EXCLUDE_DMS", default=True),
         exclude_private=_bool_env("ZULIPCHAT_EXCLUDE_PRIVATE", default=True),
-        deny_unknown_stream_ids=_bool_env("ZULIPCHAT_DENY_UNKNOWN_STREAM_IDS", default=False),
+        deny_unknown_stream_ids=_bool_env("ZULIPCHAT_DENY_UNKNOWN_STREAM_IDS", default=True),
     )
 
 
