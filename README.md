@@ -44,7 +44,7 @@ ZULIPCHAT_CHANNEL_EXCLUDE=00.16 Prayer Requests    # Always exclude (highest pri
 ZULIPCHAT_EXCLUDE_NON_JD=true                # Channels without JD prefix excluded
 ZULIPCHAT_EXCLUDE_DMS=true                   # Direct messages excluded
 ZULIPCHAT_EXCLUDE_PRIVATE=true               # Private channels excluded
-ZULIPCHAT_DENY_UNKNOWN_STREAM_IDS=false      # Set true for fail-closed on unknown IDs
+ZULIPCHAT_DENY_UNKNOWN_STREAM_IDS=true       # Deny unknown stream IDs (default: true)
 ```
 
 **Evaluation order:** explicit exclude > explicit include > JD deny areas > JD allow areas > non-JD default.
@@ -153,7 +153,7 @@ Progress is logged every 30 seconds. If running in a TTY, displays a uW branded 
 | `ZULIPCHAT_EXCLUDE_NON_JD` | `true` | Exclude channels without JD prefix |
 | `ZULIPCHAT_EXCLUDE_DMS` | `true` | Exclude direct messages |
 | `ZULIPCHAT_EXCLUDE_PRIVATE` | `true` | Exclude private channels |
-| `ZULIPCHAT_DENY_UNKNOWN_STREAM_IDS` | `false` | Fail-closed on unknown stream IDs |
+| `ZULIPCHAT_DENY_UNKNOWN_STREAM_IDS` | `true` | Deny unknown stream IDs (fail-closed) |
 | `ZULIPCHAT_READ_ONLY` | `false` | Read/search only — no write tools |
 | `ZULIPCHAT_DISABLE_AGENTS` | `false` | Disable all agent tools |
 | `ZULIPCHAT_AUDIT_ENABLED` | `false` | Enable audit logging |

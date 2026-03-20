@@ -81,7 +81,7 @@ zulipchat-mcp [options]
 | `ZULIPCHAT_EXCLUDE_NON_JD` | `true` | Exclude channels without a JD prefix |
 | `ZULIPCHAT_EXCLUDE_DMS` | `true` | Exclude direct messages |
 | `ZULIPCHAT_EXCLUDE_PRIVATE` | `true` | Exclude private (invite-only) channels |
-| `ZULIPCHAT_DENY_UNKNOWN_STREAM_IDS` | `false` | Block unknown stream IDs (fail-closed mode) |
+| `ZULIPCHAT_DENY_UNKNOWN_STREAM_IDS` | `true` | Deny unknown stream IDs (fail-closed, set `false` to allow) |
 
 **Evaluation order:** explicit exclude > explicit include > JD deny areas > JD allow areas > non-JD default.
 
