@@ -189,24 +189,50 @@ def agent_message(
                 return {"status": "error", "error": str(e)}
 
 
-def wait_for_response(request_id: str) -> dict[str, Any]:
-    """Wait for user response - timeout-based polling via DatabaseManager."""
+def wait_for_response(request_id: str, timeout: int | None = None) -> dict[str, Any]:
+    """Wait for user response - timeout-based polling via DatabaseManager.
+
+    Args:
+        request_id: The request ID to wait for
+        timeout: Timeout in seconds (default: ZULIPCHAT_AGENT_TIMEOUT env var, or 300)
+    """
     with Timer("zulip_mcp_tool_duration_seconds", {"tool": "wait_for_response"}):
         track_tool_call("wait_for_response")
+        indicator = None
         try:
+            from ..core.progress import UwProgressIndicator
+
             ensure_listener()
             db = DatabaseManager()
-            timeout_seconds = 300
+            default_timeout = int(os.getenv("ZULIPCHAT_AGENT_TIMEOUT", "300"))
+            timeout_seconds = timeout if timeout is not None else default_timeout
             start = time.time()
+
+            logger.info(
+                "Waiting for response to request %s (timeout: %ds)",
+                request_id, timeout_seconds,
+            )
+
+            # Start uW branded progress indicator (TTY only, no-op otherwise)
+            indicator = UwProgressIndicator(total_seconds=timeout_seconds)
+            indicator.start()
+            poll_count = 0
 
             while time.time() - start < timeout_seconds:
                 result = db.get_input_request(request_id)
 
                 if not result:
+                    indicator.stop(success=False)
                     return {"status": "error", "error": "Request not found"}
 
                 status = result.get("status")
                 if status in ["answered", "cancelled"]:
+                    elapsed = int(time.time() - start)
+                    indicator.stop(success=True)
+                    logger.info(
+                        "Response received for %s after %ds (status: %s)",
+                        request_id, elapsed, status,
+                    )
                     responded_at = result.get("responded_at")
                     if isinstance(responded_at, datetime):
                         responded_at_val = responded_at.isoformat()
@@ -219,17 +245,40 @@ def wait_for_response(request_id: str) -> dict[str, Any]:
                         "request_status": status,
                         "response": result.get("response"),
                         "responded_at": responded_at_val,
+                        "elapsed_seconds": elapsed,
                     }
+
+                poll_count += 1
+                # Log progress every 30 seconds (structured log, not animation)
+                if poll_count % 30 == 0:
+                    elapsed = int(time.time() - start)
+                    remaining = timeout_seconds - elapsed
+                    logger.info(
+                        "Still waiting for %s — %ds elapsed, %ds remaining",
+                        request_id, elapsed, remaining,
+                    )
 
                 time.sleep(1)
 
             # Timeout reached
+            indicator.stop(success=False)
             db.update_input_request(request_id, status="timeout")
-            return {"status": "error", "error": "Response timeout"}
+            logger.warning(
+                "Response timeout for %s after %ds", request_id, timeout_seconds
+            )
+            return {
+                "status": "error",
+                "error": f"Response timeout after {timeout_seconds}s",
+                "timeout_seconds": timeout_seconds,
+            }
 
         except Exception as e:
             track_tool_error("wait_for_response", type(e).__name__)
             return {"status": "error", "error": str(e)}
+        finally:
+            # Ensure cursor is restored even on unexpected exceptions
+            if indicator is not None:
+                indicator.stop(success=False)
 
 
 def send_agent_status(

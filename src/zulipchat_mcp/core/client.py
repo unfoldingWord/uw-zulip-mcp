@@ -1,5 +1,6 @@
 """Zulip API client wrapper for MCP integration."""
 
+import logging
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -9,7 +10,11 @@ from urllib.parse import urlparse, urlunparse
 from zulip import Client
 
 from ..config import ConfigManager
+from .audit import log_channel_access, log_tool_invocation
 from .cache import cache_decorator, stream_cache, user_cache
+from .channel_filter import get_channel_filter, is_channel_allowed
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -158,12 +163,47 @@ class ZulipClientWrapper:
         topic: str | None = None,
     ) -> dict[str, Any]:
         """Send a message to a stream or user."""
+        # Channel filter: block writes to excluded channels (checks name + privacy)
+        if message_type == "stream":
+            stream_name = to if isinstance(to, str) else to[0]
+            cf = get_channel_filter()
+            if not cf.is_channel_allowed_with_privacy(stream_name):
+                from .channel_filter import _increment_blocked
+
+                _increment_blocked("send")
+                logger.warning(
+                    "Blocked send to '%s': channel excluded by policy", stream_name
+                )
+                log_tool_invocation(
+                    "send_message", stream=stream_name,
+                    identity=self.identity, blocked=True, reason="channel_filter",
+                )
+                return {
+                    "result": "error",
+                    "msg": f"Channel '{stream_name}' is outside the configured channel filter scope",
+                }
+
+        # Channel filter: block DMs if configured
+        if message_type == "private":
+            cf = get_channel_filter()
+            if cf.config.enabled and cf.config.exclude_dms:
+                log_tool_invocation(
+                    "send_message", identity=self.identity,
+                    blocked=True, reason="dms_excluded",
+                )
+                return {
+                    "result": "error",
+                    "msg": "Direct messages are disabled by channel filter configuration",
+                }
+
         request: dict[str, Any] = {"type": message_type, "content": content}
 
         if message_type == "stream":
-            request["to"] = to if isinstance(to, str) else to[0]
+            stream_name = to if isinstance(to, str) else to[0]
+            request["to"] = stream_name
             if topic:
                 request["topic"] = topic
+            log_channel_access(stream_name, "send", identity=self.identity)
         else:  # private message
             request["to"] = to if isinstance(to, list) else [to]
 
@@ -206,7 +246,15 @@ class ZulipClientWrapper:
         if anchor == "date" and anchor_date:
             request["anchor_date"] = anchor_date
 
-        return self.client.get_messages(request)
+        response = self.client.get_messages(request)
+
+        # Channel filter: remove messages from excluded channels/DMs
+        if response.get("result") == "success" and "messages" in response:
+            response["messages"] = get_channel_filter().filter_messages(
+                response["messages"]
+            )
+
+        return response
 
     def get_messages(
         self,
@@ -261,6 +309,21 @@ class ZulipClientWrapper:
         Uses Zulip's anchor="date" + anchor_date parameter (Zulip 12.0+, feature level 445)
         to position the anchor at the cutoff time, then fetches messages after that point.
         """
+        # Channel filter: block reads from excluded channels
+        if stream_name and not is_channel_allowed(stream_name):
+            log_tool_invocation(
+                "get_messages_from_stream", stream=stream_name,
+                identity=self.identity, blocked=True, reason="channel_filter",
+            )
+            return {
+                "result": "success",
+                "messages": [],
+                "msg": f"Channel '{stream_name}' is outside the configured channel filter scope",
+            }
+
+        if stream_name:
+            log_channel_access(stream_name, "read", identity=self.identity)
+
         narrow: list[dict[str, Any]] = []
         if stream_name:
             narrow.append({"operator": "stream", "operand": stream_name})
@@ -284,6 +347,7 @@ class ZulipClientWrapper:
 
     def search_messages(self, query: str, num_results: int = 50) -> dict[str, Any]:
         """Search messages by content."""
+        log_tool_invocation("search_messages", query=query, identity=self.identity)
         narrow = [{"operator": "search", "operand": query}]
         try:
             return self.get_messages_raw(
@@ -314,7 +378,11 @@ class ZulipClientWrapper:
             # Check cache first
             cached_streams = stream_cache.get_streams()
             if cached_streams is not None:
-                return {"result": "success", "streams": cached_streams}
+                # Update index from cache (for ID-based lookups) then filter
+                cf = get_channel_filter()
+                cf.update_stream_index(cached_streams)
+                filtered = cf.filter_streams(cached_streams)
+                return {"result": "success", "streams": filtered}
 
         # Fetch from API
         kwargs: dict[str, Any] = {"include_subscribed": include_subscribed}
@@ -326,6 +394,14 @@ class ZulipClientWrapper:
         response = self.client.get_streams(**kwargs)
         if response["result"] == "success":
             stream_cache.set_streams(response["streams"])
+
+        # Channel filter: update stream metadata index BEFORE filtering
+        # so ID-based lookups work for all streams (including blocked ones)
+        if response.get("result") == "success" and "streams" in response:
+            cf = get_channel_filter()
+            cf.update_stream_index(response["streams"])
+            response["streams"] = cf.filter_streams(response["streams"])
+
         return response
 
     def get_users(self) -> dict[str, Any]:
@@ -343,6 +419,22 @@ class ZulipClientWrapper:
 
     def get_stream_topics(self, stream_id: int) -> dict[str, Any]:
         """Get recent topics for a stream."""
+        # Channel filter: block by stream ID
+        cf = get_channel_filter()
+        if not cf.is_stream_id_allowed(stream_id):
+            log_tool_invocation(
+                "get_stream_topics", identity=self.identity,
+                blocked=True, reason="stream_id_filter",
+                extra={"stream_id": str(stream_id)},
+            )
+            return {
+                "result": "error",
+                "msg": f"Stream {stream_id} is outside the configured channel filter scope",
+            }
+        # Resolve name for audit log
+        meta = cf._stream_index.get(stream_id)
+        if meta:
+            log_channel_access(meta["name"], "list_topics", identity=self.identity)
         return self.client.get_stream_topics(stream_id)
 
     def add_reaction(self, message_id: int, emoji_name: str) -> dict[str, Any]:
@@ -462,6 +554,12 @@ class ZulipClientWrapper:
         Note: SDK's get_subscribers expects stream name, not ID.
         We use call_endpoint directly with stream_id for efficiency.
         """
+        # Channel filter: block by stream ID
+        if not get_channel_filter().is_stream_id_allowed(stream_id):
+            return {
+                "result": "error",
+                "msg": f"Stream {stream_id} is outside the configured channel filter scope",
+            }
         return self.client.call_endpoint(
             f"streams/{stream_id}/members", method="GET", request={}
         )

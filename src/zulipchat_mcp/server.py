@@ -7,6 +7,8 @@ from fastmcp import FastMCP
 
 from . import __version__
 from .config import init_config_manager
+from .core.audit import init_audit_logging, is_audit_enabled
+from .core.channel_filter import init_channel_filter
 from .core.security import set_unsafe_mode
 
 # Optional: Anthropic sampling handler for LLM analytics fallback
@@ -76,6 +78,16 @@ def main() -> None:
         action="store_true",
         help="Register all tools (~55) instead of core set (19).",
     )
+    parser.add_argument(
+        "--read-only",
+        action="store_true",
+        help="Restrict to read/search tools only. No sending, editing, or reactions.",
+    )
+    parser.add_argument(
+        "--disable-agents",
+        action="store_true",
+        help="Disable all agent tools (registration, messaging, AFK, events).",
+    )
 
     args = parser.parse_args()
 
@@ -103,6 +115,26 @@ def main() -> None:
     set_unsafe_mode(args.unsafe)
     if args.unsafe:
         logger.warning("RUNNING IN UNSAFE MODE - Dangerous tools enabled")
+
+    # Initialize audit logging
+    init_audit_logging()
+    if is_audit_enabled():
+        logger.info("Audit logging ENABLED")
+
+    # Initialize channel filter (JD taxonomy-based access control)
+    try:
+        channel_filter = init_channel_filter()
+        if channel_filter.config.enabled:
+            logger.info("Channel filter ENABLED - access restricted by configuration")
+        else:
+            logger.info("Channel filter disabled - all channels accessible")
+    except ValueError as e:
+        logger.error(
+            "Channel filter configuration error: %s. "
+            "Fix the environment variables or remove them to disable filtering.",
+            e,
+        )
+        return
 
     # Initialize database (optional for agent features)
     if database_available:
@@ -136,21 +168,34 @@ def main() -> None:
 
     logger.info("FastMCP initialized successfully")
 
-    # Determine tool mode
+    # Determine tool modes
     extended = args.extended_tools or os.getenv("ZULIPCHAT_EXTENDED_TOOLS", "0") in (
         "1",
         "true",
         "True",
     )
+    read_only = args.read_only or os.getenv("ZULIPCHAT_READ_ONLY", "0") in (
+        "1",
+        "true",
+        "True",
+    )
+    disable_agents = args.disable_agents or os.getenv(
+        "ZULIPCHAT_DISABLE_AGENTS", "0"
+    ) in ("1", "true", "True")
 
-    # Register tools
-    register_core_tools(mcp)
+    if read_only:
+        logger.info("READ-ONLY MODE - write tools will not be registered")
+    if disable_agents:
+        logger.info("AGENTS DISABLED - agent tools will not be registered")
+
+    # Register tools with mode restrictions
+    register_core_tools(mcp, read_only=read_only, disable_agents=disable_agents)
 
     if extended:
-        register_extended_tools(mcp)
-        logger.info("Registered extended tool set (~55 tools)")
+        register_extended_tools(mcp, read_only=read_only, disable_agents=disable_agents)
+        logger.info("Registered extended tool set")
     else:
-        logger.info("Registered core tool set (19 tools)")
+        logger.info("Registered core tool set")
 
     # Warm user/stream caches for fast fuzzy resolution
     try:
@@ -165,7 +210,8 @@ def main() -> None:
 
     # Initialize background services singleton. The listener starts eagerly only with
     # --enable-listener; otherwise it lazy-starts on first agent tool call via ensure_listener().
-    if service_manager_available:
+    # Skip entirely if agents are disabled — no background services needed.
+    if service_manager_available and not disable_agents:
         try:
             svc = init_service_manager(config_manager, enable_listener=args.enable_listener)
             if args.enable_listener:
@@ -176,6 +222,54 @@ def main() -> None:
             )
         except Exception as e:
             logger.warning(f"Could not initialize background services: {e}")
+    elif disable_agents:
+        logger.info("Background services skipped (agents disabled)")
+
+    # Privacy notice on stderr (visible to operator, not to MCP client)
+    quiet = os.getenv("ZULIPCHAT_QUIET", "0") in ("1", "true", "True")
+    if not quiet:
+        import sys
+
+        lines = [
+            "",
+            "=" * 60,
+            "  ZulipChat MCP Server — Privacy Notice",
+            "=" * 60,
+            "",
+            "  Messages accessed via this MCP server will be sent to",
+            "  your configured LLM provider for processing. Review your",
+            "  provider's data retention policy before use.",
+            "",
+        ]
+        if channel_filter.config.enabled:
+            n_allow = len(channel_filter.config.jd_allow_areas)
+            n_exclude = len(channel_filter.config.channel_exclude)
+            n_include = len(channel_filter.config.channel_include)
+            lines.append("  Channel filter:  ENABLED")
+            if n_allow:
+                areas = ", ".join(
+                    f"{lo}-{hi}" if lo != hi else str(lo)
+                    for lo, hi in channel_filter.config.jd_allow_areas
+                )
+                lines.append(f"  Allowed areas:   {areas}")
+            if n_exclude:
+                lines.append(f"  Excluded:        {n_exclude} channel(s)")
+            if n_include:
+                lines.append(f"  Included:        {n_include} override(s)")
+            lines.append(f"  Private chans:   {'excluded' if channel_filter.config.exclude_private else 'allowed'}")
+            lines.append(f"  DMs:             {'excluded' if channel_filter.config.exclude_dms else 'allowed'}")
+            lines.append(f"  Non-JD chans:    {'excluded' if channel_filter.config.exclude_non_jd else 'allowed'}")
+        else:
+            lines.append("  Channel filter:  DISABLED (all channels accessible)")
+
+        lines.append(f"  Read-only mode:  {'YES' if read_only else 'no'}")
+        lines.append(f"  Agent tools:     {'disabled' if disable_agents else 'enabled'}")
+        lines.append("")
+        lines.append("=" * 60)
+        lines.append("")
+
+        sys.stderr.write("\n".join(lines) + "\n")
+        sys.stderr.flush()
 
     logger.info("Starting ZulipChat MCP server...")
     mcp.run()
