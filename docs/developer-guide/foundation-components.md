@@ -6,18 +6,48 @@
 - Supports `zuliprc` file path discovery and explicit paths.
 - Maintains current identity (`user` or `bot`).
 - Exposes `get_client()` and `get_bot_client()` wrappers.
+- Bot credential validation checks zuliprc field contents (email, key, site), not just file existence.
 
 ## Client wrapper (`core/client.py`)
 
 - Wraps Zulip Python client with convenience methods.
 - Handles identity-specific credential selection.
 - Provides cached `get_users()` and `get_streams()` paths.
-- Includes helpers for message retrieval, stream/topic APIs, and file URL normalization.
+- **Channel filter enforcement** — all access paths (stream listing, message search/read, send, stream-ID tools) are guarded by the channel filter.
+- **Audit logging hooks** — tool invocations and channel access are logged at key methods.
+
+## Channel filter (`core/channel_filter.py`) *(new in v0.7.0-uw)*
+
+- Johnny Decimal prefix parsing (`XX` and `XX.YY` formats).
+- Area-range allowlist/denylist with individual channel overrides.
+- Private channel and DM exclusion.
+- Stream metadata index (`id -> name, invite_only`) for ID-based enforcement.
+- Configurable via environment variables.
+- Module-level singleton pattern (matches existing codebase conventions).
+
+## Audit logging (`core/audit.py`) *(new in v0.7.0-uw)*
+
+- Dedicated `zulipchat_mcp.audit` logger (routable independently from app logs).
+- All events serialized via `json.dumps` (injection-safe).
+- Logs: tool name, channel, search query, identity, blocked status, timestamps.
+- Never logs message content.
+- Configurable output file and log level.
+- Idempotent initialization.
+
+## Progress indicator (`core/progress.py`) *(new in v0.7.0-uw)*
+
+- uW branded ASCII art progress animation for `wait_for_response`.
+- White-to-cerulean color gradient transition.
+- TTY detection — no-op in non-TTY environments.
+- Background thread, cursor hide/show with cleanup guarantees.
 
 ## Caching (`core/cache.py`)
 
 - User and stream caches are used for fast fuzzy resolution.
 - Startup warms both caches in `server.py`.
+- **TTLs configurable** via `ZULIPCHAT_CACHE_TTL_*` env vars (default: 300s/600s/900s).
+- **Fuzzy match cutoff configurable** via `ZULIPCHAT_FUZZY_MATCH_CUTOFF` (default: 0.6, clamped to 0.0-1.0).
+- Invalid env values degrade gracefully with warning log and default fallback.
 
 ## Security helpers (`core/security.py`)
 
@@ -34,8 +64,12 @@
 
 - Listener and AFK watcher behavior lives in service layer.
 - Agent communication tooling uses persistent DuckDB-backed state.
+- **Services skipped entirely when `--disable-agents` is set.**
+- Silent failure paths now log warnings instead of bare `pass`.
 
 ## Tool registration (`tools/__init__.py`)
 
-- `register_core_tools` defines the 19-tool baseline.
-- `register_extended_tools` appends the extended tool set.
+- `register_core_tools(mcp, read_only, disable_agents)` defines the tool baseline.
+- `register_extended_tools(mcp, read_only, disable_agents)` appends the extended tool set.
+- **`read_only=True`** omits all write tools (send, edit, react, flag, upload, identity switch).
+- **`disable_agents=True`** omits all agent tools (register, message, wait, AFK, events).

@@ -10,18 +10,26 @@ Save it as `~/.zuliprc`.
 
 ## 2. Start the server
 
+**For personal use** (full read/write access):
+
 ```bash
-uvx zulipchat-mcp --zulip-config-file ~/.zuliprc
+zulipchat-mcp --zulip-config-file ~/.zuliprc
 ```
 
-If your client manages MCP servers for you, use the same command in client config.
+**For organizational deployment** (read-only, filtered, no agents):
+
+```bash
+zulipchat-mcp --read-only --disable-agents --zulip-config-file ~/.zuliprc
+```
+
+With channel filtering, set the environment variables first — see [Configuration](configuration.md#channel-filter).
 
 ## 3. Connect a client
 
 Example with Claude Code:
 
 ```bash
-claude mcp add zulipchat -- uvx zulipchat-mcp --zulip-config-file ~/.zuliprc
+claude mcp add zulipchat -- zulipchat-mcp --read-only --disable-agents --zulip-config-file ~/.zuliprc
 ```
 
 Then ask the assistant to call `server_info`.
@@ -31,34 +39,34 @@ Then ask the assistant to call `server_info`.
 If you want an interactive flow:
 
 ```bash
-uvx zulipchat-mcp-setup
+zulipchat-mcp-setup
 ```
 
 The wizard scans for `zuliprc` files, validates credentials against Zulip, and prints client config snippets.
 
-## Core vs extended tools
+## Deployment modes
 
-Default mode uses 19 core tools.
-
-Enable the full 55-tool surface when needed:
-
-```bash
-uvx zulipchat-mcp --zulip-config-file ~/.zuliprc --extended-tools
-```
+| Mode | Command | Tools |
+|------|---------|-------|
+| Full access | `zulipchat-mcp --zulip-config-file ~/.zuliprc` | 19 core |
+| Read-only | `--read-only` | 9 (search/read only) |
+| No agents | `--disable-agents` | No agent tools, no background services |
+| Extended | `--extended-tools` | ~55 tools |
+| Locked down | `--read-only --disable-agents` | 9 tools, no writes, no agents |
 
 ## Dual identity (user + bot)
 
 ```bash
-uvx zulipchat-mcp \
+zulipchat-mcp \
   --zulip-config-file ~/.zuliprc \
   --zulip-bot-config-file ~/.zuliprc-bot
 ```
 
-The server starts as user identity. Use `switch_identity` to move between `user` and `bot`.
+The server starts as user identity. Use `switch_identity` to move between `user` and `bot`. Not available in read-only mode.
 
 ## Next
 
-- [Configuration](configuration.md)
+- [Configuration](configuration.md) — all CLI flags and environment variables
+- [Team Overview](../uw-zulip-mcp-overview.md) — what this fork adds and why
 - [Installation](installation.md)
-- [Setup Wizard](setup-wizard.md)
 - [Integration docs](../integrations/README.md)

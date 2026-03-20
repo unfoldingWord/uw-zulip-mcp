@@ -1,38 +1,20 @@
 # Installation
 
-Install ZulipChat MCP from PyPI, GitHub, or TestPyPI.
-
-## Recommended install (PyPI)
-
-```bash
-uvx zulipchat-mcp --zulip-config-file ~/.zuliprc
-```
-
-Interactive onboarding:
-
-```bash
-uvx zulipchat-mcp-setup
-```
+This is a private fork. Install from the GitHub repository (not PyPI).
 
 ## Install from GitHub
 
 ```bash
-uvx --from git+https://github.com/akougkas/zulipchat-mcp.git zulipchat-mcp --zulip-config-file ~/.zuliprc
-```
-
-## Install from TestPyPI
-
-```bash
-uvx --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ zulipchat-mcp --zulip-config-file ~/.zuliprc
+uvx --from git+https://github.com/unfoldingWord/uw-zulip-mcp.git zulipchat-mcp --zulip-config-file ~/.zuliprc
 ```
 
 ## Local development install
 
 ```bash
-git clone https://github.com/akougkas/zulipchat-mcp.git
-cd zulipchat-mcp
+git clone https://github.com/unfoldingWord/uw-zulip-mcp.git
+cd uw-zulip-mcp
 uv sync
-uv run zulipchat-mcp --zulip-config-file ~/.zuliprc
+uv run zulipchat-mcp --read-only --disable-agents --zulip-config-file ~/.zuliprc
 ```
 
 ## Per-client setup
@@ -52,21 +34,21 @@ Use the dedicated integration pages:
 ## Verify installation
 
 ```bash
-uvx zulipchat-mcp --help
+zulipchat-mcp --help
 ```
-
-If help renders, installation is working.
 
 ## Upgrade
 
-PyPI:
+Pull latest and reinstall:
 
 ```bash
-uvx --refresh zulipchat-mcp --help
+cd uw-zulip-mcp
+git pull origin develop
+uv sync
 ```
 
-GitHub source:
+Or via uvx:
 
 ```bash
-uvx --from git+https://github.com/akougkas/zulipchat-mcp.git zulipchat-mcp --help
+uvx --refresh --from git+https://github.com/unfoldingWord/uw-zulip-mcp.git zulipchat-mcp --help
 ```
