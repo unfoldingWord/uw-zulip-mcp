@@ -1,262 +1,79 @@
-# ZulipChat MCP Server
+# uw-zulip-mcp
 
-<div align="center">
+unfoldingWord's fork of [zulipchat-mcp](https://github.com/akougkas/zulipchat-mcp) with privacy controls, channel filtering, and organizational deployment features.
 
-  <h3>Model Context Protocol server for Zulip Chat. Connect Claude Code, Gemini CLI, Codex, Cursor, Windsurf, VS Code Copilot, and other MCP clients to Zulip.</h3>
+## What This Is
 
-  [![PyPI](https://img.shields.io/pypi/v/zulipchat-mcp)](https://pypi.org/project/zulipchat-mcp/)
-  [![CI](https://github.com/akougkas/zulipchat-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/akougkas/zulipchat-mcp/actions/workflows/ci.yml)
-  [![Publish](https://github.com/akougkas/zulipchat-mcp/actions/workflows/publish.yml/badge.svg)](https://github.com/akougkas/zulipchat-mcp/actions/workflows/publish.yml)
-  [![Coverage](https://img.shields.io/badge/coverage-67%25-brightgreen)](https://github.com/akougkas/zulipchat-mcp/actions/workflows/ci.yml)
-  [![Downloads](https://img.shields.io/pypi/dm/zulipchat-mcp)](https://pypi.org/project/zulipchat-mcp/)
-  [![GitHub stars](https://img.shields.io/github/stars/akougkas/zulipchat-mcp)](https://github.com/akougkas/zulipchat-mcp/stargazers)
-  [![Python](https://img.shields.io/pypi/pyversions/zulipchat-mcp)](https://pypi.org/project/zulipchat-mcp/)
-  [![License](https://img.shields.io/github/license/akougkas/zulipchat-mcp)](LICENSE)
-  [![MCP](https://img.shields.io/badge/MCP-Compatible-blue)](https://modelcontextprotocol.io)
+An MCP server that connects AI assistants (Claude Code, Gemini CLI, Cursor, etc.) to unfoldingWord's Zulip workspace — with deterministic access controls so sensitive channels (Prayer Requests, Family, etc.) are never sent to LLM providers.
 
-  [Quick Start](#quick-start) · [Setup Wizard](docs/user-guide/setup-wizard.md) · [Integrations](docs/integrations/README.md) · [Two-Tier Tools](#two-tier-tool-architecture) · [Contributing](CONTRIBUTING.md)
-</div>
-
----
+**Built on** [zulipchat-mcp v0.6.2](https://github.com/akougkas/zulipchat-mcp) (MIT licensed).
 
 ## Quick Start
 
 ```bash
-uvx zulipchat-mcp --zulip-config-file ~/.zuliprc
+# Read-only, filtered, no agents — recommended for org deployment
+zulipchat-mcp --read-only --disable-agents --zulip-config-file ~/.zuliprc
 ```
 
-That's it. Your AI assistant can now read and write Zulip messages.
-
-Need a zuliprc? **Zulip Settings > Personal > Account & privacy > API key** — download the file, save it as `~/.zuliprc`.
-
-Interactive onboarding:
+With channel filtering configured via environment:
 
 ```bash
-uvx zulipchat-mcp-setup
+export ZULIPCHAT_CHANNEL_FILTER_ENABLED=true
+export ZULIPCHAT_JD_ALLOW_AREAS=01,02,14,30-99
+export ZULIPCHAT_CHANNEL_EXCLUDE="00.16 Prayer Requests,00.18 General,00.19 Family,00.20 Random,00.21 Encouragement"
+export ZULIPCHAT_EXCLUDE_DMS=true
+export ZULIPCHAT_EXCLUDE_PRIVATE=true
+export ZULIPCHAT_READ_ONLY=true
+export ZULIPCHAT_DISABLE_AGENTS=true
+
+zulipchat-mcp --zulip-config-file ~/.zuliprc
 ```
 
-## What This Does
-
-ZulipChat MCP bridges any MCP-compatible AI assistant (Claude Code, Gemini CLI, Cursor, Windsurf, etc.) to your Zulip workspace. The assistant can:
-
-- **Send and read messages** — stream messages, DMs, replies, reactions
-- **Search conversation history** — full-text search with filters for sender, stream, time range
-- **Resolve people by name** — "message Jaime" just works, no hunting for formal emails
-- **Switch identities** — post as yourself or as a bot, in the same session
-- **Monitor activity** — search recent messages, get stream info, check who's online
-
-## Two-Tier Tool Architecture
-
-v0.6.0 introduced a deliberate split: **19 core tools** by default, **~55 tools** when you need more.
-
-### Core Mode (default)
-
-The 19 tools that cover 95% of daily use:
-
-| Category | Tools |
-|----------|-------|
-| **Messaging** | `send_message`, `edit_message`, `get_message`, `add_reaction` |
-| **Search** | `search_messages`, `get_streams`, `get_stream_info`, `get_stream_topics` |
-| **Users** | `resolve_user`, `get_users`, `get_own_user` |
-| **Agent Comms** | `teleport_chat`, `register_agent`, `agent_message`, `request_user_input`, `wait_for_response` |
-| **System** | `switch_identity`, `server_info`, `manage_message_flags` |
-
-Why 19 instead of 55+? Fewer tools means faster tool selection, lower token overhead, and less confusion for the AI. Most tasks — sending messages, searching, reacting — only need the core set.
-
-### Extended Mode
-
-Need scheduled messages, event queues, file uploads, analytics, or advanced search?
-
-```bash
-uvx zulipchat-mcp --zulip-config-file ~/.zuliprc --extended-tools
-```
-
-Or via environment variable:
-```bash
-ZULIPCHAT_EXTENDED_TOOLS=1 uvx zulipchat-mcp --zulip-config-file ~/.zuliprc
-```
-
-Extended mode adds: `toggle_reaction`, `cross_post_message`, `advanced_search`, `construct_narrow`, `get_scheduled_messages`, `manage_scheduled_message`, `register_events`, `get_events`, `listen_events`, `upload_file`, `manage_files`, `get_daily_summary`, `manage_user_mute`, `get_user`, `get_presence`, `get_user_groups`, and more.
-
-## Installation
-
-Full per-client setup guide: [docs/integrations/README.md](docs/integrations/README.md)
-
-### Claude Code
-
-```bash
-claude mcp add zulipchat -- uvx zulipchat-mcp --zulip-config-file ~/.zuliprc
-```
-
-With dual identity (you + a bot):
-```bash
-claude mcp add zulipchat -- uvx zulipchat-mcp \
-  --zulip-config-file ~/.zuliprc \
-  --zulip-bot-config-file ~/.zuliprc-bot
-```
-
-### Gemini CLI
-
-Add to `~/.gemini/settings.json` under `mcpServers`:
-
-```json
-{
-  "zulipchat": {
-    "command": "uvx",
-    "args": ["zulipchat-mcp", "--zulip-config-file", "/path/to/.zuliprc"]
-  }
-}
-```
-
-### Claude Desktop / Cursor / Any MCP Client
-
-Add to your MCP configuration:
-
-```json
-{
-  "mcpServers": {
-    "zulipchat": {
-      "command": "uvx",
-      "args": ["zulipchat-mcp", "--zulip-config-file", "/path/to/.zuliprc"]
-    }
-  }
-}
-```
-
-### Configuration Options
-
-| Option | Description |
-|--------|-------------|
-| `--zulip-config-file PATH` | Path to your zuliprc file |
-| `--zulip-bot-config-file PATH` | Bot zuliprc for dual identity |
-| `--extended-tools` | Register all ~55 tools instead of 19 |
-| `--unsafe` | Enable administrative tools (use with caution) |
-| `--debug` | Enable debug logging |
-
-### More clients
-
-Dedicated setup pages:
-
-- [Gemini CLI](docs/integrations/gemini-cli.md)
-- [Codex](docs/integrations/codex.md)
-- [OpenCode](docs/integrations/opencode.md)
-- [VS Code + GitHub Copilot](docs/integrations/vscode-copilot.md)
-- [Cursor](docs/integrations/cursor.md)
-- [Windsurf](docs/integrations/windsurf.md)
-- [Antigravity](docs/integrations/antigravity.md)
-- [Generic MCP](docs/integrations/generic.md)
-
-## Dual Identity
-
-Configure both a user and a bot zuliprc to let your assistant switch between identities mid-session:
-
-```bash
-uvx zulipchat-mcp \
-  --zulip-config-file ~/.zuliprc \
-  --zulip-bot-config-file ~/.zuliprc-bot
-```
-
-The assistant posts as **you** by default. Call `switch_identity` to post as the bot — useful for automated notifications, agent-to-agent communication, or keeping human vs. bot messages distinct.
-
-## Real-World Examples
-
-**"Catch me up on what happened in #engineering today"**
-→ Assistant calls `search_messages` with stream + time filter, summarizes the thread.
-
-**"Tell the team we're deploying at 3pm"**
-→ Assistant calls `send_message` to #engineering with the announcement.
-
-**"Who sent that message about the API migration?"**
-→ Assistant calls `search_messages` with keywords, returns sender and context.
-
-**"React with :thumbs_up: to Sarah's last message"**
-→ Assistant calls `resolve_user` ("Sarah"), `search_messages` (sender), then `add_reaction`.
-
-**"DM Jaime that the PR is ready"**
-→ Assistant calls `teleport_chat` with fuzzy name resolution — no email needed.
-
-## Development
-
-```bash
-git clone https://github.com/akougkas/zulipchat-mcp.git
-cd zulipchat-mcp
-uv sync
-uv run zulipchat-mcp --zulip-config-file ~/.zuliprc
-```
-
-Run checks:
-```bash
-uv run pytest -q              # 566 tests, 60% coverage gate
-uv run ruff check .           # Linting
-uv run mypy src               # Type checking
-```
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide, and [CLAUDE.md](CLAUDE.md) / [AGENTS.md](AGENTS.md) for AI agent instructions.
-
-## Architecture
-
-```
-src/zulipchat_mcp/
-├── core/           # Client wrapper, identity, caching, security
-├── tools/          # MCP tool implementations (two-tier registration)
-├── services/       # Background listener, AFK watcher
-├── utils/          # Logging, DuckDB persistence, metrics
-└── config.py       # config loading (zuliprc + environment fallback)
-```
-
-Built on [FastMCP](https://github.com/jlowin/fastmcp) with async-first design, [DuckDB](https://duckdb.org) for agent state persistence, and smart user/stream caching for fast fuzzy resolution.
-
-## Channel Filter & Access Controls
-
-For organizational deployments, restrict which Zulip channels the MCP server can access.
+## What We Changed (Fork Delta)
 
 ### Channel Filtering (Johnny Decimal)
 
-Filter channels by their JD naming prefix (`XX` or `XX.YY`):
+Deterministic access control using unfoldingWord's JD naming convention. Channels are filtered by their `XX` or `XX.YY` prefix, with support for area ranges, individual overrides, and private channel exclusion.
 
 ```env
-ZULIPCHAT_CHANNEL_FILTER_ENABLED=true
-ZULIPCHAT_JD_ALLOW_AREAS=01,02,14,30-99       # JD area ranges to allow
-ZULIPCHAT_JD_DENY_AREAS=                        # JD area ranges to deny (overrides allow)
-ZULIPCHAT_CHANNEL_INCLUDE=00.17 All unfoldingWord  # Always include these channels
-ZULIPCHAT_CHANNEL_EXCLUDE=00.16 Prayer Requests    # Always exclude these channels
-ZULIPCHAT_EXCLUDE_NON_JD=true                   # Exclude channels without JD prefix
-ZULIPCHAT_EXCLUDE_DMS=true                      # Exclude direct messages
-ZULIPCHAT_EXCLUDE_PRIVATE=true                  # Exclude private channels
-ZULIPCHAT_DENY_UNKNOWN_STREAM_IDS=false         # Set true for fail-closed on unknown IDs
+ZULIPCHAT_CHANNEL_FILTER_ENABLED=true       # Master switch
+ZULIPCHAT_JD_ALLOW_AREAS=01,02,14,30-99     # JD area ranges to allow
+ZULIPCHAT_JD_DENY_AREAS=                     # JD area ranges to deny (overrides allow)
+ZULIPCHAT_CHANNEL_INCLUDE=00.17 All unfoldingWord  # Always include (overrides area rules)
+ZULIPCHAT_CHANNEL_EXCLUDE=00.16 Prayer Requests    # Always exclude (highest priority)
+ZULIPCHAT_EXCLUDE_NON_JD=true                # Channels without JD prefix excluded
+ZULIPCHAT_EXCLUDE_DMS=true                   # Direct messages excluded
+ZULIPCHAT_EXCLUDE_PRIVATE=true               # Private channels excluded
+ZULIPCHAT_DENY_UNKNOWN_STREAM_IDS=false      # Set true for fail-closed on unknown IDs
 ```
 
 **Evaluation order:** explicit exclude > explicit include > JD deny areas > JD allow areas > non-JD default.
 
-Filter is enforced at the client wrapper level across all access paths (stream listing, message search, send, stream-ID tools). No tool can bypass it.
+**Enforcement:** Applied at the client wrapper level across all access paths — stream listing, message search, send, read, and stream-ID tools. No tool can bypass it.
 
 ### Read-Only Mode
-
-Restrict to search and read operations only:
 
 ```bash
 zulipchat-mcp --read-only --zulip-config-file ~/.zuliprc
 ```
 
-Or via environment: `ZULIPCHAT_READ_ONLY=true`
+Or: `ZULIPCHAT_READ_ONLY=true`
 
-In read-only mode, write tools (send, edit, react, flag, upload) are not registered.
+Write tools (send, edit, react, flag, upload) are not registered at all — not just blocked but absent from the tool list.
 
-### Disable Agent Tools
-
-Remove all agent/autonomous operation tools:
+### Agent Disabling
 
 ```bash
 zulipchat-mcp --disable-agents --zulip-config-file ~/.zuliprc
 ```
 
-Or via environment: `ZULIPCHAT_DISABLE_AGENTS=true`
+Or: `ZULIPCHAT_DISABLE_AGENTS=true`
 
-Agent tools are not registered and background services are not started.
+Agent tools are not registered and background services (message listener, scheduler) are not started.
 
 ### Audit Logging
 
-Log which tools were invoked and which channels were accessed — without logging message content:
+Structured logging of tool invocations and channel access — without logging message content.
 
 ```env
 ZULIPCHAT_AUDIT_ENABLED=true
@@ -264,17 +81,123 @@ ZULIPCHAT_AUDIT_FILE=/var/log/zulipchat-mcp-audit.log  # optional, defaults to s
 ZULIPCHAT_AUDIT_LEVEL=INFO                              # optional
 ```
 
-Audit events include: tool name, channel accessed, search query, identity, and whether the request was blocked by policy. Message content is never logged.
+Each event is serialized as JSON via `json.dumps` (injection-safe):
 
-### Recommended Deployment
-
-For a locked-down organizational deployment:
-
-```bash
-zulipchat-mcp --read-only --disable-agents --zulip-config-file ~/.zuliprc
+```json
+{"event": "tool_invocation", "tool": "search_messages", "query": "deployment status", "identity": "user", "timestamp_unix": 1710886200.123}
+{"event": "channel_access", "channel": "30 Infrastructure", "access_type": "read", "identity": "user", "timestamp_unix": 1710886201.456}
+{"event": "tool_invocation", "tool": "send_message", "stream": "00.16 Prayer Requests", "blocked": true, "reason": "channel_filter", "timestamp_unix": 1710886202.789}
 ```
 
-With channel filtering configured via environment variables. The server displays a privacy notice on startup summarizing the active configuration. Suppress with `ZULIPCHAT_QUIET=true`.
+### Startup Privacy Notice
+
+On startup, the server displays a privacy notice on stderr summarizing the active configuration:
+
+```
+============================================================
+  ZulipChat MCP Server — Privacy Notice
+============================================================
+
+  Messages accessed via this MCP server will be sent to
+  your configured LLM provider for processing. Review your
+  provider's data retention policy before use.
+
+  Channel filter:  ENABLED
+  Allowed areas:   1-2, 14-14, 30-99
+  Excluded:        5 channel(s)
+  Included:        1 override(s)
+  Private chans:   excluded
+  DMs:             excluded
+  Non-JD chans:    excluded
+  Read-only mode:  YES
+  Agent tools:     disabled
+============================================================
+```
+
+Suppress with `ZULIPCHAT_QUIET=true`.
+
+### Configurable Cache TTLs
+
+```env
+ZULIPCHAT_CACHE_TTL_MESSAGES=300   # Message cache (default: 5 min)
+ZULIPCHAT_CACHE_TTL_STREAMS=600    # Stream cache (default: 10 min)
+ZULIPCHAT_CACHE_TTL_USERS=900      # User cache (default: 15 min)
+ZULIPCHAT_FUZZY_MATCH_CUTOFF=0.6   # Name resolution threshold (0.0-1.0)
+```
+
+### Agent Timeout
+
+```env
+ZULIPCHAT_AGENT_TIMEOUT=300   # wait_for_response timeout in seconds (default: 300)
+```
+
+Progress is logged every 30 seconds. If running in a TTY, displays a uW branded progress indicator.
+
+### Additional Hardening
+
+- **Bot credential validation** — `has_bot_credentials()` validates zuliprc field contents, not just file existence
+- **Security scanning** — Bandit added to CI workflow
+- **Silent failure fixes** — Bare `pass` in except blocks replaced with `logger.warning()` across event cleanup, service manager, and agent tracker
+- **Safe env parsing** — Invalid env values degrade gracefully with warnings instead of crashing
+- **Blocked-by-policy counters** — WARNING-level logging on every denied access
+
+## Full Environment Variable Reference
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ZULIPCHAT_CHANNEL_FILTER_ENABLED` | `false` | Enable JD channel filtering |
+| `ZULIPCHAT_JD_ALLOW_AREAS` | _(empty)_ | Comma-separated JD area ranges (e.g., `30-99`) |
+| `ZULIPCHAT_JD_DENY_AREAS` | _(empty)_ | Area ranges to deny (overrides allow) |
+| `ZULIPCHAT_CHANNEL_INCLUDE` | _(empty)_ | Channel names to always include |
+| `ZULIPCHAT_CHANNEL_EXCLUDE` | _(empty)_ | Channel names to always exclude |
+| `ZULIPCHAT_EXCLUDE_NON_JD` | `true` | Exclude channels without JD prefix |
+| `ZULIPCHAT_EXCLUDE_DMS` | `true` | Exclude direct messages |
+| `ZULIPCHAT_EXCLUDE_PRIVATE` | `true` | Exclude private channels |
+| `ZULIPCHAT_DENY_UNKNOWN_STREAM_IDS` | `false` | Fail-closed on unknown stream IDs |
+| `ZULIPCHAT_READ_ONLY` | `false` | Read/search only — no write tools |
+| `ZULIPCHAT_DISABLE_AGENTS` | `false` | Disable all agent tools |
+| `ZULIPCHAT_AUDIT_ENABLED` | `false` | Enable audit logging |
+| `ZULIPCHAT_AUDIT_FILE` | _(stderr)_ | Audit log file path |
+| `ZULIPCHAT_AUDIT_LEVEL` | `INFO` | Audit log level |
+| `ZULIPCHAT_AGENT_TIMEOUT` | `300` | Agent wait timeout (seconds) |
+| `ZULIPCHAT_CACHE_TTL_MESSAGES` | `300` | Message cache TTL (seconds) |
+| `ZULIPCHAT_CACHE_TTL_STREAMS` | `600` | Stream cache TTL (seconds) |
+| `ZULIPCHAT_CACHE_TTL_USERS` | `900` | User cache TTL (seconds) |
+| `ZULIPCHAT_FUZZY_MATCH_CUTOFF` | `0.6` | Fuzzy name match threshold (0.0-1.0) |
+| `ZULIPCHAT_QUIET` | `false` | Suppress startup privacy notice |
+
+## CLI Flags
+
+| Flag | Description |
+|------|-------------|
+| `--zulip-config-file PATH` | Path to user zuliprc file |
+| `--zulip-bot-config-file PATH` | Bot zuliprc for dual identity |
+| `--read-only` | Search/read only |
+| `--disable-agents` | No agent tools or background services |
+| `--extended-tools` | Register all ~55 tools instead of 19 |
+| `--unsafe` | Enable administrative tools |
+| `--debug` | Debug logging |
+| `--enable-listener` | Start message listener eagerly |
+
+## Development
+
+```bash
+git clone https://github.com/unfoldingWord/uw-zulip-mcp.git
+cd uw-zulip-mcp
+uv sync
+uv run pytest -q -m "not slow and not integration"   # 651 tests
+uv run ruff check .                                   # Linting
+uv run mypy src                                       # Type checking
+```
+
+### Upstream Sync
+
+The upstream repo is tracked as a remote:
+
+```bash
+git fetch upstream
+git merge upstream/main  # Review changes before merging
+```
 
 ## Privacy
 
@@ -282,27 +205,13 @@ With channel filtering configured via environment variables. The server displays
 - **No telemetry** — zero analytics, tracking, or usage reporting
 - **Local execution** — all processing happens on your hardware
 - **Credentials stay local** — API keys are never logged or transmitted beyond your Zulip server
-
-Full policy: [PRIVACY.md](PRIVACY.md)
+- **Channel filter** — sensitive channels never reach the LLM provider
+- **Audit trail** — optional structured logging of all access (without message content)
 
 ## License
 
 MIT — See [LICENSE](LICENSE)
 
-## Links
+## Upstream
 
-- [Documentation Index](docs/README.md)
-- [Support](SUPPORT.md)
-- [Security Policy](SECURITY.md)
-- [Zulip API Documentation](https://zulip.com/api/)
-- [Model Context Protocol](https://modelcontextprotocol.io)
-- [Report Issues](https://github.com/akougkas/zulipchat-mcp/issues)
-- [Discussions](https://github.com/akougkas/zulipchat-mcp/discussions)
-
----
-
-<div align="center">
-  <sub>Built for the Zulip community</sub>
-</div>
-
-<!-- mcp-name: io.github.akougkas/zulipchat -->
+Based on [akougkas/zulipchat-mcp](https://github.com/akougkas/zulipchat-mcp) v0.6.2.
