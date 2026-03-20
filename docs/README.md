@@ -1,14 +1,23 @@
-# ZulipChat MCP Documentation
+# uw-zulip-mcp Documentation
 
-ZulipChat MCP v0.6.0 is a Model Context Protocol server for Zulip Chat.
+uw-zulip-mcp v0.7.0-uw — unfoldingWord fork of ZulipChat MCP with privacy controls.
 
 ## Start Here
 
+- [Team Overview](uw-zulip-mcp-overview.md) — what we built, why, and how to use it
 - [Quick Start](user-guide/quick-start.md)
 - [Installation](user-guide/installation.md)
-- [Configuration](user-guide/configuration.md)
+- [Configuration](user-guide/configuration.md) — all CLI flags and environment variables
 - [Setup Wizard](user-guide/setup-wizard.md)
 - [Troubleshooting](TROUBLESHOOTING.md)
+
+## Privacy & Access Controls (v0.7.0-uw)
+
+- **Channel filtering** — JD taxonomy-based access control ([Configuration](user-guide/configuration.md#channel-filter))
+- **Read-only mode** — `--read-only` ([Configuration](user-guide/configuration.md#access-control-modes))
+- **Agent disabling** — `--disable-agents` ([Configuration](user-guide/configuration.md#access-control-modes))
+- **Audit logging** — structured JSON trail ([Configuration](user-guide/configuration.md#audit-logging))
+- **Safety model** — layered controls ([Configuration](user-guide/configuration.md#safety-model))
 
 ## Integrations
 
@@ -37,15 +46,19 @@ ZulipChat MCP v0.6.0 is a Model Context Protocol server for Zulip Chat.
 
 ## Developer Docs
 
-- [Architecture](developer-guide/architecture.md)
+- [Architecture](developer-guide/architecture.md) — module layout, filter design, startup flow
 - [Tool Categories](developer-guide/tool-categories.md)
 - [Foundation Components](developer-guide/foundation-components.md)
 - [Testing Guide](testing/README.md)
 
-## Tool Modes (v0.6.0)
+## Tool Modes
 
-- Default mode: 19 core tools.
-- Extended mode: 55 tools (`--extended-tools` or `ZULIPCHAT_EXTENDED_TOOLS=1`).
+| Mode | Tools | Flag |
+|------|-------|------|
+| Core (default) | 19 | _(none)_ |
+| Core + read-only | 9 | `--read-only` |
+| Extended | ~55 | `--extended-tools` |
+| Extended + read-only | ~25 | `--extended-tools --read-only` |
 
 ## Community and Security
 
@@ -53,6 +66,7 @@ ZulipChat MCP v0.6.0 is a Model Context Protocol server for Zulip Chat.
 - [Contributing Guide](../CONTRIBUTING.md)
 - [Support](../SUPPORT.md)
 
-## Historical Release Notes
+## Release History
 
+- [v0.7.0-uw](../CHANGELOG.md) — unfoldingWord fork (current)
 - `docs/releases/` contains historical snapshots for earlier versions.
