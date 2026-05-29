@@ -89,6 +89,29 @@ def main() -> None:
         help="Disable all agent tools (registration, messaging, AFK, events).",
     )
 
+    # Transport options
+    parser.add_argument(
+        "--transport",
+        choices=["stdio", "sse", "http", "streamable-http"],
+        default="stdio",
+        help=(
+            "Transport protocol (default: stdio). "
+            "Use 'http'/'streamable-http' for persistent network deployments, "
+            "'sse' for legacy SSE clients."
+        ),
+    )
+    parser.add_argument(
+        "--host",
+        default=None,
+        help="Host to bind to in SSE/HTTP mode (default: 127.0.0.1).",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=None,
+        help="Port to listen on in SSE/HTTP mode (default: 3000, or MCP_PORT env var).",
+    )
+
     args = parser.parse_args()
 
     # Setup logging
@@ -279,8 +302,15 @@ def main() -> None:
         sys.stderr.write("\n".join(lines) + "\n")
         sys.stderr.flush()
 
-    logger.info("Starting ZulipChat MCP server...")
-    mcp.run()
+    transport = args.transport or os.getenv("ZULIPCHAT_TRANSPORT", "stdio")
+    logger.info("Starting ZulipChat MCP server (transport=%s)...", transport)
+
+    if transport == "stdio":
+        mcp.run()
+    else:
+        host = args.host or os.getenv("ZULIPCHAT_HOST", "127.0.0.1")
+        port = args.port or config_manager.config.port  # MCP_PORT env var, default 3000
+        mcp.run(transport=transport, host=host, port=port)
 
 
 if __name__ == "__main__":

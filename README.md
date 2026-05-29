@@ -143,6 +143,45 @@ ZULIPCHAT_AGENT_TIMEOUT=300   # wait_for_response timeout in seconds (default: 3
 
 Progress is logged every 30 seconds. If running in a TTY, displays a uW branded progress indicator.
 
+### Network Transport (SSE / HTTP)
+
+By default the server runs over `stdio` — the AI client spawns the process directly. For Docker deployments or shared access, switch to a persistent HTTP transport.
+
+**Local HTTP daemon** (single user, safer bind address):
+
+```bash
+zulipchat-mcp --transport http --host 127.0.0.1 --port 3000 --read-only --disable-agents --zulip-config-file ~/.zuliprc
+```
+
+Register with Claude Code:
+```bash
+claude mcp add zulipchat --url http://127.0.0.1:3000/mcp
+```
+
+**Docker** (binds to `0.0.0.0:3000` by default in the image):
+
+```bash
+docker run -p 3000:3000 \
+  -e ZULIP_EMAIL=... \
+  -e ZULIP_API_KEY=... \
+  -e ZULIP_SITE=https://yourorg.zulipchat.com \
+  uw-zulip-mcp
+```
+
+Or override via environment variables without rebuilding:
+
+```bash
+ZULIPCHAT_TRANSPORT=http ZULIPCHAT_HOST=0.0.0.0 MCP_PORT=3000
+```
+
+Transport choices:
+
+| Value | Description |
+|-------|-------------|
+| `stdio` | Default — spawned by client, communicates over stdin/stdout |
+| `http` / `streamable-http` | Persistent HTTP daemon, supports session resumption |
+| `sse` | Legacy SSE — use `http` for new deployments |
+
 ### Additional Hardening
 
 - **Bot credential validation** — `has_bot_credentials()` validates zuliprc field contents, not just file existence
@@ -174,6 +213,9 @@ Progress is logged every 30 seconds. If running in a TTY, displays a uW branded 
 | `ZULIPCHAT_CACHE_TTL_STREAMS` | `600` | Stream cache TTL (seconds) |
 | `ZULIPCHAT_CACHE_TTL_USERS` | `900` | User cache TTL (seconds) |
 | `ZULIPCHAT_FUZZY_MATCH_CUTOFF` | `0.6` | Fuzzy name match threshold (0.0-1.0) |
+| `ZULIPCHAT_TRANSPORT` | `stdio` | Transport: `stdio`, `http`, `streamable-http`, or `sse` |
+| `ZULIPCHAT_HOST` | `127.0.0.1` | Bind address for HTTP/SSE mode |
+| `MCP_PORT` | `3000` | Listen port for HTTP/SSE mode |
 | `ZULIPCHAT_QUIET` | `false` | Suppress startup privacy notice |
 
 ## CLI Flags
@@ -188,6 +230,9 @@ Progress is logged every 30 seconds. If running in a TTY, displays a uW branded 
 | `--unsafe` | Enable administrative tools |
 | `--debug` | Debug logging |
 | `--enable-listener` | Start message listener eagerly |
+| `--transport MODE` | Transport: `stdio` (default), `http`, `streamable-http`, `sse` |
+| `--host HOST` | Bind address for HTTP/SSE mode (default: `127.0.0.1`) |
+| `--port PORT` | Listen port for HTTP/SSE mode (default: `3000`) |
 
 ## Development
 

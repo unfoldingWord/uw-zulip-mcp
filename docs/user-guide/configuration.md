@@ -49,6 +49,9 @@ zulipchat-mcp [options]
 | `--unsafe` | Enable destructive operations |
 | `--debug` | Enable debug logging |
 | `--enable-listener` | Start message listener eagerly (default: lazy) |
+| `--transport MODE` | Transport: `stdio` (default), `http`, `streamable-http`, `sse` |
+| `--host HOST` | Bind address for HTTP/SSE mode (default: `127.0.0.1`) |
+| `--port PORT` | Listen port for HTTP/SSE mode (default: `3000`) |
 
 ## Environment variables
 
@@ -121,14 +124,74 @@ ZULIPCHAT_EXCLUDE_PRIVATE=true
 | `ZULIPCHAT_FUZZY_MATCH_CUTOFF` | `0.6` | Name resolution threshold (0.0-1.0) |
 | `ZULIPCHAT_AGENT_TIMEOUT` | `300` | Agent wait_for_response timeout (seconds) |
 
+### Transport
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ZULIPCHAT_TRANSPORT` | `stdio` | Transport: `stdio`, `http`, `streamable-http`, or `sse` |
+| `ZULIPCHAT_HOST` | `127.0.0.1` | Bind address for HTTP/SSE mode |
+| `MCP_PORT` | `3000` | Listen port for HTTP/SSE mode (also `--port`) |
+
 ### Other
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `ZULIPCHAT_QUIET` | `false` | Suppress startup privacy notice |
 | `MCP_DEBUG` | `false` | Debug logging |
-| `MCP_PORT` | `3000` | Internal port metadata |
 | `ZULIP_DEV_NOTIFY` | `false` | Bypass AFK gating for agent tools (dev only) |
+
+## Transport modes
+
+The server supports four transport protocols, selectable via `--transport` or `ZULIPCHAT_TRANSPORT`:
+
+| Transport | Use case |
+|-----------|----------|
+| `stdio` (default) | Local use — AI client spawns the process directly |
+| `http` / `streamable-http` | Persistent daemon — recommended for Docker and shared deployments |
+| `sse` | Legacy SSE clients — use `http` for new deployments |
+
+### stdio (default)
+
+No extra flags needed. The AI client (Claude Code, Cursor, etc.) spawns the process and communicates over stdin/stdout.
+
+```bash
+zulipchat-mcp --zulip-config-file ~/.zuliprc
+```
+
+MCP client config example:
+```bash
+claude mcp add zulipchat -- uvx zulipchat-mcp --zulip-config-file ~/.zuliprc
+```
+
+### HTTP / streamable-HTTP (network mode)
+
+Run as a persistent daemon. The MCP client connects over HTTP.
+
+```bash
+zulipchat-mcp --transport http --host 127.0.0.1 --port 3000 --zulip-config-file ~/.zuliprc
+```
+
+Or via environment variables:
+```bash
+ZULIPCHAT_TRANSPORT=http ZULIPCHAT_HOST=127.0.0.1 MCP_PORT=3000 zulipchat-mcp
+```
+
+MCP client config example:
+```bash
+claude mcp add zulipchat --url http://127.0.0.1:3000/mcp
+```
+
+### Docker
+
+The Docker image defaults to `http` transport bound to `0.0.0.0:3000`.
+
+```bash
+docker run -p 3000:3000 \
+  -e ZULIP_EMAIL=... -e ZULIP_API_KEY=... -e ZULIP_SITE=... \
+  uw-zulip-mcp
+```
+
+Connect your MCP client to `http://localhost:3000/mcp`.
 
 ## Configuration precedence
 
