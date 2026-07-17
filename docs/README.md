@@ -1,6 +1,6 @@
 # uw-zulip-mcp Documentation
 
-uw-zulip-mcp v0.7.0-uw — unfoldingWord fork of ZulipChat MCP with privacy controls.
+uw-zulip-mcp — unfoldingWord fork of ZulipChat MCP v0.7.1 with privacy controls.
 
 ## Start Here
 
@@ -55,10 +55,10 @@ uw-zulip-mcp v0.7.0-uw — unfoldingWord fork of ZulipChat MCP with privacy cont
 
 | Mode | Tools | Flag |
 |------|-------|------|
-| Core (default) | 19 | _(none)_ |
+| Core (default) | 20 | _(none)_ |
 | Core + read-only | 9 | `--read-only` |
-| Extended | ~55 | `--extended-tools` |
-| Extended + read-only | ~25 | `--extended-tools --read-only` |
+| Extended | 56 | `--extended-tools` |
+| Extended + read-only | 24 | `--extended-tools --read-only` |
 
 ## Community and Security
 
@@ -68,5 +68,5 @@ uw-zulip-mcp v0.7.0-uw — unfoldingWord fork of ZulipChat MCP with privacy cont
 
 ## Release History
 
-- [v0.7.0-uw](../CHANGELOG.md) — unfoldingWord fork (current)
+- [CHANGELOG](../CHANGELOG.md) — current: upstream v0.7.1 merged onto the v0.7.0-uw fork
 - `docs/releases/` contains historical snapshots for earlier versions.

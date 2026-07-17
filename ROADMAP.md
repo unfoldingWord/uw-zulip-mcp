@@ -1,8 +1,8 @@
 # Roadmap
 
-## v0.6.2 (Current)
+## v0.7.1 (Current)
 
-Released 2026-02-22 - [PyPI](https://pypi.org/project/zulipchat-mcp/)
+Released 2026-05-11 — [PyPI](https://pypi.org/project/zulipchat-mcp/)
 
 **Highlights:**
 - Teleport-Chat: bidirectional agent-human DMs with identity-aware routing

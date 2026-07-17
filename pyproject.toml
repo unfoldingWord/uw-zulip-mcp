@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "zulipchat-mcp"
-version = "0.6.2"
-description = "Model Context Protocol (MCP) server that connects AI assistants to Zulip Chat with a 19-tool core mode and 55-tool extended mode"
+version = "0.7.1"
+description = "Model Context Protocol (MCP) server that connects AI assistants to Zulip Chat with a 20-tool core mode and 56-tool extended mode"
 authors = [
     {name = "Anthony Kougkas", email = "a.kougkas@gmail.com"},
 ]
@@ -40,7 +40,7 @@ classifiers = [
     "Topic :: System :: Monitoring",
 ]
 dependencies = [
-    "fastmcp[anthropic]>=3.0.0,<4.0.0",
+    "fastmcp[anthropic,tasks]>=3.0.0,<4.0.0",
     "httpx>=0.28.0",
     "pydantic>=2.11.0",
     "python-dotenv>=1.1.0",
@@ -82,6 +82,7 @@ Changelog = "https://github.com/akougkas/zulipchat-mcp/releases"
 zulipchat-mcp = "zulipchat_mcp.server:main"
 zulipchat-mcp-integrate = "zulipchat_mcp.integrations.registry:main"
 zulipchat-mcp-setup = "zulipchat_mcp.setup_wizard:main"
+zulipchat-mcp-hook = "zulipchat_mcp.claude_hooks:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/zulipchat_mcp"]

@@ -45,7 +45,7 @@ zulipchat-mcp [options]
 | `--zulip-bot-config-file PATH` | Bot zuliprc for dual identity |
 | `--read-only` | Search/read only — no write tools registered |
 | `--disable-agents` | No agent tools, no background services |
-| `--extended-tools` | Register all ~55 tools instead of 19 |
+| `--extended-tools` | Register all 56 tools instead of the 20-tool core set |
 | `--unsafe` | Enable destructive operations |
 | `--debug` | Enable debug logging |
 | `--enable-listener` | Start message listener eagerly (default: lazy) |
@@ -104,7 +104,7 @@ ZULIPCHAT_EXCLUDE_PRIVATE=true
 |----------|---------|-------------|
 | `ZULIPCHAT_READ_ONLY` | `false` | Read/search only — write tools not registered |
 | `ZULIPCHAT_DISABLE_AGENTS` | `false` | Agent tools not registered, background services skipped |
-| `ZULIPCHAT_EXTENDED_TOOLS` | `false` | Register all ~55 tools |
+| `ZULIPCHAT_EXTENDED_TOOLS` | `false` | Register all 56 tools |
 
 ### Audit logging
 
@@ -138,7 +138,6 @@ ZULIPCHAT_EXCLUDE_PRIVATE=true
 |----------|---------|-------------|
 | `ZULIPCHAT_QUIET` | `false` | Suppress startup privacy notice |
 | `MCP_DEBUG` | `false` | Debug logging |
-| `ZULIP_DEV_NOTIFY` | `false` | Bypass AFK gating for agent tools (dev only) |
 
 ## Transport modes
 

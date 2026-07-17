@@ -35,7 +35,7 @@ src/zulipchat_mcp/
 Tool registration respects two mode flags:
 
 - **`read_only=True`** — Only search/read tools are registered. Write tools (send, edit, react, flag, upload) are omitted entirely.
-- **`disable_agents=True`** — Agent tools (register, message, wait, AFK) are omitted. Background services are not started.
+- **`disable_agents=True`** — Agent tools (register, sessions, message, wait) are omitted. The message listener never starts because no registered tool triggers it.
 
 This produces:
 
@@ -122,10 +122,10 @@ Audit hooks are wired into `client.py` at: `send_message`, `search_messages`, `g
 
 ## Service behavior
 
-- Listener services start through `ServiceManager`.
-- **Services are entirely skipped when `--disable-agents` is set.**
-- AFK gating affects agent notification tools, not all tool calls.
-- `wait_for_response` has a configurable timeout (`ZULIPCHAT_AGENT_TIMEOUT`, default 300s) with progress logging every 30s.
+- Listener services start through `ServiceManager`, managed by the FastMCP lifespan (eager with `--enable-listener`, otherwise lazy on first agent tool call).
+- **With `--disable-agents`, no agent tools are registered, so the listener never starts.**
+- Inbound topic messages are classified into session events by the agent control plane.
+- `wait_for_response` has a configurable timeout (`ZULIPCHAT_AGENT_TIMEOUT`, default 300s).
 
 ## Security-related boundaries
 

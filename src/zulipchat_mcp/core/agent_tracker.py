@@ -21,15 +21,15 @@ class AgentTracker:
     """Simple agent instance tracker using project-local storage.
 
     Uses the `.mcp/` directory under the current working directory for any
-    temporary state. AFK is maintained as a runtime (in-memory) flag and is
-    not persisted across runs.
+    temporary state. This module is retained for backward compatibility with
+    older agent registrations and is no longer the primary session model.
     """
 
     # Configuration directory (project-local)
     CONFIG_DIR = Path.cwd() / ".mcp"
 
     # File paths
-    AFK_STATE_FILE = CONFIG_DIR / "afk_state.json"  # kept for backward compat, unused
+    AFK_STATE_FILE = CONFIG_DIR / "afk_state.json"  # legacy, unused
     AGENT_REGISTRY_FILE = CONFIG_DIR / "agent_registry.json"
     PENDING_RESPONSES_FILE = CONFIG_DIR / "pending_responses.json"
 
@@ -44,7 +44,7 @@ class AgentTracker:
         """
         self.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         self.session_id = str(uuid.uuid4())[:8]  # Short session ID
-        # Runtime AFK flag (not persisted)
+        # Legacy runtime flag retained for compatibility with older tests/tools.
         self.afk_enabled: bool = False
         # Cached stream name (set by agents.py after API check)
         self._agent_stream: str | None = agent_stream

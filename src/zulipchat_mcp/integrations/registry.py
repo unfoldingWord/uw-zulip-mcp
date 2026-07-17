@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
 from typing import Any
 
 from .. import __version__
+from .claude_code_package import export_claude_code_package
 
 CLIENTS = [
     "claude-code",
@@ -115,6 +117,22 @@ def main() -> None:
     print_parser.add_argument("--zulip-bot-config-file")
     print_parser.add_argument("--extended-tools", action="store_true")
 
+    export_parser = sub.add_parser(
+        "export",
+        help="Export richer client integration assets",
+    )
+    export_parser.add_argument("--client", choices=["claude-code"], required=True)
+    export_parser.add_argument("--output-dir", required=True)
+    export_parser.add_argument("--zulip-config-file", required=True)
+    export_parser.add_argument("--zulip-bot-config-file")
+    export_parser.add_argument(
+        "--mode",
+        choices=["standalone", "plugin"],
+        default="standalone",
+    )
+    export_parser.add_argument("--extended-tools", action="store_true")
+    export_parser.add_argument("--force", action="store_true")
+
     args = parser.parse_args()
 
     if args.command == "list":
@@ -128,6 +146,20 @@ def main() -> None:
             args.extended_tools,
         )
         print(_render_for_client(args.client, base))
+        return
+
+    if args.command == "export":
+        if args.client != "claude-code":
+            raise ValueError(f"Unsupported export client: {args.client}")
+        results = export_claude_code_package(
+            Path(args.output_dir),
+            zulip_config_file=args.zulip_config_file,
+            zulip_bot_config_file=args.zulip_bot_config_file,
+            mode=args.mode,
+            extended_tools=args.extended_tools,
+            force=args.force,
+        )
+        print(json.dumps({"status": "success", "files": results}, indent=2))
 
 
 if __name__ == "__main__":

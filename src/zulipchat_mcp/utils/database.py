@@ -300,6 +300,92 @@ class DatabaseManager:
         """
         )
 
+        # Agent control-plane tables used by the Zulip session architecture.
+        conn.execute(
+            """
+          CREATE TABLE IF NOT EXISTS agent_profiles(
+            agent_id TEXT PRIMARY KEY,
+            agent_name TEXT NOT NULL,
+            agent_type TEXT NOT NULL,
+            owner_email TEXT NOT NULL,
+            stream_name TEXT NOT NULL,
+            topic_prefix TEXT NOT NULL,
+            metadata TEXT,
+            created_at TIMESTAMP NOT NULL,
+            updated_at TIMESTAMP NOT NULL
+          );
+        """
+        )
+
+        conn.execute(
+            """
+          CREATE TABLE IF NOT EXISTS agent_sessions(
+            session_id TEXT PRIMARY KEY,
+            agent_id TEXT NOT NULL,
+            external_session_id TEXT,
+            stream_name TEXT NOT NULL,
+            topic_name TEXT NOT NULL,
+            owner_email TEXT NOT NULL,
+            project_name TEXT,
+            project_dir TEXT,
+            host TEXT,
+            status TEXT NOT NULL,
+            metadata TEXT,
+            created_at TIMESTAMP NOT NULL,
+            updated_at TIMESTAMP NOT NULL,
+            ended_at TIMESTAMP,
+            FOREIGN KEY(agent_id) REFERENCES agent_profiles(agent_id)
+          );
+        """
+        )
+
+        conn.execute(
+            """
+          CREATE TABLE IF NOT EXISTS agent_requests(
+            request_id TEXT PRIMARY KEY,
+            agent_id TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            request_type TEXT NOT NULL,
+            prompt TEXT NOT NULL,
+            options TEXT,
+            context TEXT,
+            status TEXT NOT NULL,
+            source_event TEXT,
+            metadata TEXT,
+            created_at TIMESTAMP NOT NULL,
+            responded_at TIMESTAMP,
+            response TEXT,
+            FOREIGN KEY(agent_id) REFERENCES agent_profiles(agent_id),
+            FOREIGN KEY(session_id) REFERENCES agent_sessions(session_id)
+          );
+        """
+        )
+
+        conn.execute(
+            """
+          CREATE TABLE IF NOT EXISTS session_events(
+            id TEXT PRIMARY KEY,
+            agent_id TEXT,
+            session_id TEXT,
+            stream_name TEXT,
+            topic_name TEXT,
+            sender_email TEXT,
+            direction TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            content TEXT,
+            normalized_content TEXT,
+            command TEXT,
+            decision TEXT,
+            request_id TEXT,
+            metadata TEXT,
+            created_at TIMESTAMP NOT NULL,
+            acked BOOLEAN DEFAULT FALSE,
+            FOREIGN KEY(agent_id) REFERENCES agent_profiles(agent_id),
+            FOREIGN KEY(session_id) REFERENCES agent_sessions(session_id)
+          );
+        """
+        )
+
     def execute(
         self, sql: str, params: list[Any] | tuple[Any, ...] | None = None
     ) -> None:
