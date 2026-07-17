@@ -7,11 +7,11 @@ incoming messages and update pending user input requests.
 from __future__ import annotations
 
 import asyncio
-import re
 import uuid as _uuid
 from datetime import datetime, timezone
 from typing import Any
 
+from ..core.agent_control import AgentCoordinator
 from ..core.client import ZulipClientWrapper
 from ..utils.database_manager import DatabaseManager
 from ..utils.logging import get_logger
@@ -38,6 +38,7 @@ class MessageListener:
         self._queue_id: str | None = None
         self._last_event_id: int | None = None
         self._consecutive_errors: int = 0
+        self._coordinator = AgentCoordinator(db=db, bot_client=client)
 
     async def start(self) -> None:
         """Start listening to Zulip events."""
@@ -51,7 +52,7 @@ class MessageListener:
                     # Error response (429, etc.); backoff before retrying
                     self._consecutive_errors += 1
                     delay = min(
-                        self._BACKOFF_BASE ** self._consecutive_errors,
+                        self._BACKOFF_BASE**self._consecutive_errors,
                         self._BACKOFF_MAX,
                     )
                     logger.warning(
@@ -67,13 +68,17 @@ class MessageListener:
                 logger.error(f"Listener error: {e}")
                 self._consecutive_errors += 1
                 delay = min(
-                    self._BACKOFF_BASE ** self._consecutive_errors,
+                    self._BACKOFF_BASE**self._consecutive_errors,
                     self._BACKOFF_MAX,
                 )
                 await asyncio.sleep(delay)
 
     async def stop(self) -> None:
         """Stop listener loop."""
+        self.request_stop()
+
+    def request_stop(self) -> None:
+        """Request listener shutdown from any thread."""
         self.running = False
 
     async def _get_events(self) -> list[dict[str, Any]] | None:
@@ -134,7 +139,7 @@ class MessageListener:
             # No narrow — receive all messages (DMs + subscribed streams)
             request = {
                 "event_types": ["message"],
-                "apply_markdown": True,
+                "apply_markdown": False,
                 "client_gravatar": True,
             }
             resp = self.client.client.call_endpoint(
@@ -162,17 +167,6 @@ class MessageListener:
         if self._queue_id is not None:
             self.db.save_listener_state(self._queue_id, self._last_event_id)
 
-    def _extract_request_id(self, topic: str | None, content: str | None) -> str | None:
-        if topic and topic.startswith("Agents/Input/"):
-            parts = topic.split("/")
-            if parts:
-                return parts[-1]
-        if content:
-            match = re.search(r"\bID:\s*([A-Za-z0-9_-]{4,})\b", content)
-            if match:
-                return match.group(1)
-        return None
-
     async def _process_message(self, message: dict[str, Any]) -> None:
         """Process a message event: update pending input requests and store as agent event."""
         if not message:
@@ -185,8 +179,8 @@ class MessageListener:
         topic = message.get("subject") or message.get("topic")
         content = message.get("content")
 
-        # Check for pending input request match
-        request_id = self._extract_request_id(
+        # Legacy input-request support for existing workflows.
+        request_id = self._coordinator.extract_request_id(
             str(topic) if topic is not None else None,
             str(content) if content is not None else None,
         )
@@ -199,6 +193,9 @@ class MessageListener:
                     response=content or "",
                     responded_at=datetime.now(timezone.utc),
                 )
+
+        # Session-aware routing, owner policy, and request persistence.
+        self._coordinator.record_inbound_message(message)
 
         # Always store as agent_event for poll_agent_events()
         self.db.create_agent_event(

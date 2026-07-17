@@ -8,6 +8,7 @@ from .event_management import register_event_management_tools
 from .files import register_files_tools
 from .mark_messaging import register_mark_messaging_tools
 from .messaging import register_messaging_tools
+from .registration import optional_background_task, register_tool
 from .schedule_messaging import register_schedule_messaging_tools
 from .search import register_search_tools
 from .stream_management import register_stream_management_tools
@@ -38,7 +39,7 @@ def register_core_tools(
     read_only: bool = False,
     disable_agents: bool = False,
 ) -> None:
-    """Register core tools with optional mode restrictions.
+    """Register the default tool surface with optional mode restrictions.
 
     Args:
         mcp: FastMCP instance
@@ -90,16 +91,16 @@ def register_core_tools(
     )
 
     # System (1 — server_info is always safe)
-    mcp.tool(
-        name="server_info", description="Get server version and capabilities."
-    )(server_info)
+    mcp.tool(name="server_info", description="Get server version and capabilities.")(
+        server_info
+    )
 
     # --- Write tools (skipped in read-only mode) ---
     if not read_only:
         # Messaging (3)
-        mcp.tool(name="send_message", description="Send a message to a stream or user.")(
-            send_message
-        )
+        mcp.tool(
+            name="send_message", description="Send a message to a stream or user."
+        )(send_message)
         mcp.tool(
             name="edit_message",
             description="Edit message content, topic, or move between streams.",
@@ -124,32 +125,46 @@ def register_core_tools(
     if not disable_agents and not read_only:
         from .agents import (
             agent_message,
+            ensure_agent_session,
             register_agent,
             request_user_input,
             teleport_chat,
             wait_for_response,
         )
 
-        mcp.tool(
+        interactive_task = optional_background_task(poll_seconds=2)
+
+        # Agent Communication (6)
+        register_tool(
+            mcp,
+            teleport_chat,
             name="teleport_chat",
             description="Send message to user or channel with fuzzy name resolution.",
-        )(teleport_chat)
+            task=interactive_task,
+        )
         mcp.tool(
             name="register_agent",
-            description="Register agent instance for tracking and communication.",
+            description="Register or update a stable agent profile for Zulip control.",
         )(register_agent)
         mcp.tool(
+            name="ensure_agent_session",
+            description="Create or refresh the Zulip topic binding for an agent session.",
+        )(ensure_agent_session)
+        mcp.tool(
             name="agent_message",
-            description="Send agent notification via Agents-Channel.",
+            description="Send a session-scoped message into the bound Zulip topic.",
         )(agent_message)
         mcp.tool(
             name="request_user_input",
-            description="Request interactive input from user with options.",
+            description="Request a question or approval response from the owner in-topic.",
         )(request_user_input)
-        mcp.tool(
+        register_tool(
+            mcp,
+            wait_for_response,
             name="wait_for_response",
-            description="Wait for user reply to an input request.",
-        )(wait_for_response)
+            description="Wait for a persisted agent request response.",
+            task=interactive_task,
+        )
 
 
 def register_extended_tools(
@@ -188,24 +203,24 @@ def register_extended_tools(
 
     # Users — read-only (7)
     mcp.tool(name="get_user", description="Look up a user by ID or email.")(get_user)
-    mcp.tool(
-        name="get_user_status", description="Get user's status text and emoji."
-    )(get_user_status)
+    mcp.tool(name="get_user_status", description="Get user's status text and emoji.")(
+        get_user_status
+    )
     mcp.tool(
         name="get_user_presence", description="Get presence info for a specific user."
     )(get_user_presence)
-    mcp.tool(
-        name="get_presence", description="Get presence info for all users."
-    )(get_presence)
+    mcp.tool(name="get_presence", description="Get presence info for all users.")(
+        get_presence
+    )
     mcp.tool(name="get_user_groups", description="Get all user groups.")(
         get_user_groups
     )
-    mcp.tool(
-        name="get_user_group_members", description="Get members of a user group."
-    )(get_user_group_members)
-    mcp.tool(
-        name="is_user_group_member", description="Check if user is in a group."
-    )(is_user_group_member)
+    mcp.tool(name="get_user_group_members", description="Get members of a user group.")(
+        get_user_group_members
+    )
+    mcp.tool(name="is_user_group_member", description="Check if user is in a group.")(
+        is_user_group_member
+    )
 
     # Search (3)
     mcp.tool(
@@ -240,9 +255,9 @@ def register_extended_tools(
     # Commands — read-only (1)
     from .commands import list_command_types
 
-    mcp.tool(
-        name="list_command_types", description="List available command types."
-    )(list_command_types)
+    mcp.tool(name="list_command_types", description="List available command types.")(
+        list_command_types
+    )
 
     # --- Write tools (skipped in read-only mode) ---
     if not read_only:
@@ -267,13 +282,15 @@ def register_extended_tools(
             update_status,
         )
 
+        listener_task = optional_background_task(poll_seconds=5)
+
         # Users — write (2)
         mcp.tool(name="update_status", description="Update your own status and emoji.")(
             update_status
         )
-        mcp.tool(
-            name="manage_user_mute", description="Mute or unmute a user."
-        )(manage_user_mute)
+        mcp.tool(name="manage_user_mute", description="Mute or unmute a user.")(
+            manage_user_mute
+        )
 
         # Messaging (2)
         mcp.tool(
@@ -299,9 +316,13 @@ def register_extended_tools(
         mcp.tool(name="get_events", description="Poll events from a registered queue.")(
             get_events
         )
-        mcp.tool(
-            name="listen_events", description="Listen for events with auto queue management."
-        )(listen_events)
+        register_tool(
+            mcp,
+            listen_events,
+            name="listen_events",
+            description="Listen for events with auto queue management.",
+            task=listener_task,
+        )
         mcp.tool(name="deregister_events", description="Deregister an event queue.")(
             deregister_events
         )
@@ -332,25 +353,32 @@ def register_extended_tools(
     # --- Agent extended tools (skipped when agents disabled OR read-only) ---
     if not disable_agents and not read_only:
         from .agents import (
-            afk_mode,
+            close_agent_session,
             list_instances,
+            list_sessions,
             manage_task,
             poll_agent_events,
             send_agent_status,
         )
 
-        mcp.tool(
-            name="send_agent_status", description="Send agent status update."
-        )(send_agent_status)
+        mcp.tool(name="send_agent_status", description="Send agent status update.")(
+            send_agent_status
+        )
         mcp.tool(name="manage_task", description="Start, update, or complete a task.")(
             manage_task
         )
-        mcp.tool(name="list_instances", description="List registered agent instances.")(
-            list_instances
+        mcp.tool(name="list_sessions", description="List known agent sessions.")(
+            list_sessions
         )
         mcp.tool(
-            name="afk_mode", description="Enable, disable, or check AFK mode."
-        )(afk_mode)
+            name="list_instances",
+            description="Compatibility alias for listing sessions.",
+        )(list_instances)
         mcp.tool(
-            name="poll_agent_events", description="Poll unacknowledged agent events."
+            name="close_agent_session",
+            description="Close a session binding and optionally announce the result.",
+        )(close_agent_session)
+        mcp.tool(
+            name="poll_agent_events",
+            description="Poll unacknowledged inbound session events.",
         )(poll_agent_events)

@@ -2,11 +2,14 @@
 
 import argparse
 import os
+from collections.abc import AsyncIterator
+from typing import Any, Literal, cast
 
 from fastmcp import FastMCP
+from fastmcp.server.lifespan import lifespan
 
 from . import __version__
-from .config import init_config_manager
+from .config import ConfigManager, init_config_manager
 from .core.audit import init_audit_logging, is_audit_enabled
 from .core.channel_filter import init_channel_filter
 from .core.security import set_unsafe_mode
@@ -21,7 +24,7 @@ except ImportError:
 
 # Optional service manager for background services
 try:
-    from .core.service_manager import init_service_manager
+    from .core.service_manager import init_service_manager, shutdown_service_manager
 
     service_manager_available = True
 except ImportError:
@@ -37,6 +40,26 @@ except ImportError:
     database_available = False
 
 from .utils.logging import get_logger, setup_structured_logging
+
+
+def _build_server_lifespan(config_manager: ConfigManager, enable_listener: bool) -> Any:
+    """Build a FastMCP lifespan for ZulipChat background services."""
+
+    @lifespan
+    async def server_lifespan(server: FastMCP[Any]) -> AsyncIterator[dict[str, Any]]:
+        if not service_manager_available:
+            yield {}
+            return
+
+        svc = init_service_manager(config_manager, enable_listener=enable_listener)
+        if enable_listener:
+            svc.start()
+        try:
+            yield {"service_manager": svc}
+        finally:
+            shutdown_service_manager()
+
+    return server_lifespan
 
 
 def main() -> None:
@@ -76,7 +99,7 @@ def main() -> None:
     parser.add_argument(
         "--extended-tools",
         action="store_true",
-        help="Register all tools (~55) instead of core set (19).",
+        help="Register all tools (56) instead of the core set (20).",
     )
     parser.add_argument(
         "--read-only",
@@ -86,7 +109,7 @@ def main() -> None:
     parser.add_argument(
         "--disable-agents",
         action="store_true",
-        help="Disable all agent tools (registration, messaging, AFK, events).",
+        help="Disable all agent tools (registration, sessions, messaging, events).",
     )
 
     # Transport options
@@ -184,7 +207,18 @@ def main() -> None:
     # Initialize MCP with modern configuration
     mcp = FastMCP(
         "ZulipChat MCP",
+        version=__version__,
+        website_url="https://github.com/akougkas/zulipchat-mcp",
+        instructions=(
+            "Use ZulipChat MCP to bind coding agents to Zulip topics, send lifecycle "
+            "updates, request approvals, and read steering commands from the topic owner."
+        ),
         on_duplicate="warn",
+        # FastMCP protocol tasks are enabled per long-running tool. Keeping the
+        # server default forbidden prevents sync/fast tools from being advertised
+        # as task-capable by accident.
+        tasks=False,
+        lifespan=_build_server_lifespan(config_manager, args.enable_listener),
         sampling_handler=sampling_handler,
         sampling_handler_behavior="fallback",  # Use only when client doesn't support sampling
     )
@@ -231,23 +265,6 @@ def main() -> None:
     except Exception as e:
         logger.debug(f"Cache warmup skipped: {e}")
 
-    # Initialize background services singleton. The listener starts eagerly only with
-    # --enable-listener; otherwise it lazy-starts on first agent tool call via ensure_listener().
-    # Skip entirely if agents are disabled — no background services needed.
-    if service_manager_available and not disable_agents:
-        try:
-            svc = init_service_manager(config_manager, enable_listener=args.enable_listener)
-            if args.enable_listener:
-                svc.start()
-            logger.info(
-                "Background services %s",
-                "started (listener enabled)" if args.enable_listener else "ready (listener lazy)",
-            )
-        except Exception as e:
-            logger.warning(f"Could not initialize background services: {e}")
-    elif disable_agents:
-        logger.info("Background services skipped (agents disabled)")
-
     # Privacy notice on stderr (visible to operator, not to MCP client)
     quiet = os.getenv("ZULIPCHAT_QUIET", "0") in ("1", "true", "True")
     if not quiet:
@@ -279,9 +296,15 @@ def main() -> None:
                 lines.append(f"  Excluded:        {n_exclude} channel(s)")
             if n_include:
                 lines.append(f"  Included:        {n_include} override(s)")
-            lines.append(f"  Private chans:   {'excluded' if channel_filter.config.exclude_private else 'allowed'}")
-            lines.append(f"  DMs:             {'excluded' if channel_filter.config.exclude_dms else 'allowed'}")
-            lines.append(f"  Non-JD chans:    {'excluded' if channel_filter.config.exclude_non_jd else 'allowed'}")
+            lines.append(
+                f"  Private chans:   {'excluded' if channel_filter.config.exclude_private else 'allowed'}"
+            )
+            lines.append(
+                f"  DMs:             {'excluded' if channel_filter.config.exclude_dms else 'allowed'}"
+            )
+            lines.append(
+                f"  Non-JD chans:    {'excluded' if channel_filter.config.exclude_non_jd else 'allowed'}"
+            )
             if channel_filter.config.deny_unknown_stream_ids:
                 lines.append("  Unknown IDs:     denied (fail-closed)")
             else:
@@ -294,7 +317,9 @@ def main() -> None:
             lines.append("  Channel filter:  DISABLED (all channels accessible)")
 
         lines.append(f"  Read-only mode:  {'YES' if read_only else 'no'}")
-        lines.append(f"  Agent tools:     {'disabled' if disable_agents else 'enabled'}")
+        lines.append(
+            f"  Agent tools:     {'disabled' if disable_agents else 'enabled'}"
+        )
         lines.append("")
         lines.append("=" * 60)
         lines.append("")
@@ -303,6 +328,13 @@ def main() -> None:
         sys.stderr.flush()
 
     transport = args.transport or os.getenv("ZULIPCHAT_TRANSPORT", "stdio")
+    if transport not in ("stdio", "sse", "http", "streamable-http"):
+        logger.error(
+            "Invalid transport %r; expected stdio, sse, http, or streamable-http",
+            transport,
+        )
+        return
+    transport = cast(Literal["stdio", "sse", "http", "streamable-http"], transport)
     logger.info("Starting ZulipChat MCP server (transport=%s)...", transport)
 
     if transport == "stdio":

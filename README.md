@@ -6,7 +6,7 @@ unfoldingWord's fork of [zulipchat-mcp](https://github.com/akougkas/zulipchat-mc
 
 An MCP server that connects AI assistants (Claude Code, Gemini CLI, Cursor, etc.) to unfoldingWord's Zulip workspace — with deterministic access controls so sensitive channels (Prayer Requests, Family, etc.) are never sent to LLM providers.
 
-**Built on** [zulipchat-mcp v0.6.2](https://github.com/akougkas/zulipchat-mcp) (MIT licensed).
+**Built on** [zulipchat-mcp v0.7.1](https://github.com/akougkas/zulipchat-mcp) (MIT licensed).
 
 ## Quick Start
 
@@ -226,7 +226,7 @@ Transport choices:
 | `--zulip-bot-config-file PATH` | Bot zuliprc for dual identity |
 | `--read-only` | Search/read only |
 | `--disable-agents` | No agent tools or background services |
-| `--extended-tools` | Register all ~55 tools instead of 19 |
+| `--extended-tools` | Register all 56 tools instead of the 20-tool core set |
 | `--unsafe` | Enable administrative tools |
 | `--debug` | Debug logging |
 | `--enable-listener` | Start message listener eagerly |
@@ -276,4 +276,4 @@ MIT — See [LICENSE](LICENSE)
 
 ## Upstream
 
-Based on [akougkas/zulipchat-mcp](https://github.com/akougkas/zulipchat-mcp) v0.6.2.
+Based on [akougkas/zulipchat-mcp](https://github.com/akougkas/zulipchat-mcp) v0.7.1.

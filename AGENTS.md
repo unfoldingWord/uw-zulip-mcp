@@ -1,6 +1,6 @@
 # Repository Guidelines
 
-## Current Status (v0.6.2)
+## Current Status (v0.7.1)
 
 **Published**: [PyPI](https://pypi.org/project/zulipchat-mcp/) | Install: `uvx zulipchat-mcp`
 
@@ -15,7 +15,7 @@
 - `uv run zulipchat-mcp --zulip-config-file ~/.zuliprc [--enable-listener]` — run server locally.
 - `uvx zulipchat-mcp` — quick run via uvx shim.
 - `uv run pytest -q` — run tests. Use `-m "not slow and not integration"` to skip long tests; `--cov=src` for coverage. Gate is set to 60%.
-- `uv run ruff check .` — lint; `uv run black .` — format; `uv run mypy src` — type-check.
+- `uv run ruff check .` — lint; use Black on changed Python files; `uv run mypy src` — type-check.
 
 ## Coding Style & Naming Conventions
 - Python 3.10+, 4‑space indent, Black line length 88, Ruff configured (pycodestyle, pyflakes, isort, bugbear, pyupgrade). Keep imports sorted.
@@ -49,14 +49,13 @@ async def analyze_stream_with_llm(stream_name: str, ctx: Context | None = None) 
 
 ### Bidirectional Agent Communication (v0.4+)
 Full agent-to-user messaging pipeline available in `src/zulipchat_mcp/tools/agents.py`:
-- `register_agent()` - Create agent instance with database persistence
-- `agent_message()` - Send message to user (respects AFK mode)
-- `request_user_input()` - Interactive questions with routing (DM, stream, Agents-Channel)
-- `wait_for_response()` - Synchronous polling for user responses
-- `enable_afk_mode()` - Background listener activation
-- `disable_afk_mode()` - Normal operation mode
-
-Use `ZULIP_DEV_NOTIFY=1` environment variable to bypass AFK gating during development.
+- `register_agent()` - Register a stable agent profile
+- `ensure_agent_session()` - Bind a Zulip topic to a live agent session
+- `agent_message()` - Send session-scoped messages or lifecycle updates
+- `request_user_input()` - Persist in-topic questions or approvals
+- `wait_for_response()` - Synchronous polling for persisted responses
+- `poll_agent_events()` - Read owner steering/command events from the session topic
+- `zulipchat-mcp-hook` - Bridge Claude Code hook events into the same session model
 
 ### Emoji Registry (v0.4+)
 New `src/zulipchat_mcp/core/emoji_registry.py` enforces approved emoji for agent reactions:
@@ -82,11 +81,11 @@ New `src/zulipchat_mcp/core/emoji_registry.py` enforces approved emoji for agent
   # Correct syntax (tested)
   claude mcp add zulipchat -e ZULIP_EMAIL=bot@org.com -e ZULIP_API_KEY=key -e ZULIP_SITE=https://org.zulipchat.com -- uvx --from git+https://github.com/akougkas/zulipchat-mcp.git zulipchat-mcp
   ```
-- **Testing Before Release**: Always test all three installation methods with real credentials in clean environments to ensure packaging works correctly.
+- **Testing Before Release**: Always run the fake-credential MCP stdio smoke from both the project environment and the built wheel. Use real Zulip credentials only for targeted manual checks of behavior that actually requires Zulip API access.
 
 ## Security & Configuration Tips
 - Do not commit secrets. Use `.env` (gitignored). Common vars: `ZULIP_EMAIL`, `ZULIP_API_KEY`, `ZULIP_SITE`.
-- Prefer CLI flags for credentials in MCP clients. Message listener is always-on since v0.5.2 (`--enable-listener` kept for backward compat).
+- Prefer CLI flags for credentials in MCP clients. Message listener startup is lazy by default; `--enable-listener` starts it eagerly for backward compatibility.
 - Optional checks before release: `uv run bandit -q -r src` and `uv run safety check`.
 
 ## Documentation Resources
@@ -123,12 +122,18 @@ Full checklist: [RELEASING.md](RELEASING.md)
 ```bash
 uv run python scripts/bump_version.py X.Y.Z   # Bump scripted version locations
 # Update CHANGELOG.md manually
+uv sync
+uv run pytest -q && uv run mypy src && uv run ruff check .
+changed_py=$(git diff --name-only -- '*.py')
+[ -z "$changed_py" ] || uv run black --check $changed_py
+uv build
+scripts/pre_release_smoke.sh --version X.Y.Z --allow-dirty
+uv run python scripts/release_preflight.py --version X.Y.Z --allow-dirty
+git add AGENTS.md CHANGELOG.md CLAUDE.md ROADMAP.md pyproject.toml server.json uv.lock src/zulipchat_mcp tests scripts .github docs README.md CONTRIBUTING.md RELEASING.md
+git commit -m "chore: bump version to X.Y.Z"
 uv run python scripts/release_preflight.py --version X.Y.Z
-scripts/pre_release_smoke.sh --version X.Y.Z
-uv run pytest -q && uv run ruff check . && uv run mypy src
-git add -A && git commit -m "chore: bump version to X.Y.Z"
 git tag vX.Y.Z && git push && git push --tags
-gh release create vX.Y.Z --title "vX.Y.Z — Title" --notes "..." --latest
+gh release create vX.Y.Z --title "vX.Y.Z - Title" --generate-notes --latest
 ```
 
 Publishing a GitHub release auto-triggers `.github/workflows/publish.yml` which builds and uploads to PyPI via trusted publisher (OIDC). Never leave releases as drafts.

@@ -18,102 +18,114 @@ class TestDatabaseManagerWrapper:
             yield db_instance
 
     def test_init(self, mock_db):
-        """Test initialization."""
         manager = DatabaseManager()
         assert manager._db == mock_db
 
-    def test_create_agent_instance(self, mock_db):
-        """Test create_agent_instance."""
+    def test_upsert_agent_profile(self, mock_db):
         manager = DatabaseManager()
+        mock_db.query_one_as_dict.return_value = None
 
-        result = manager.create_agent_instance(
-            "agent1", "type", "proj", instance_id="inst1"
+        result = manager.upsert_agent_profile(
+            agent_id="agent-1",
+            agent_name="claude",
+            agent_type="claude-code",
+            owner_email="owner@example.com",
+            stream_name="Agents-Channel",
+            topic_prefix="Agents/Session",
+        )
+
+        assert result["status"] == "success"
+        sql = mock_db.execute.call_args[0][0]
+        assert "INSERT OR REPLACE INTO agent_profiles" in sql
+
+    def test_get_agent_profile(self, mock_db):
+        manager = DatabaseManager()
+        mock_db.query_one_as_dict.return_value = {"agent_id": "agent-1"}
+        result = manager.get_agent_profile("agent-1")
+        assert result["agent_id"] == "agent-1"
+
+    def test_upsert_agent_session(self, mock_db):
+        manager = DatabaseManager()
+        mock_db.query_one_as_dict.return_value = None
+
+        result = manager.upsert_agent_session(
+            session_id="sess-1",
+            agent_id="agent-1",
+            external_session_id="cc-123",
+            stream_name="Agents-Channel",
+            topic_name="Agents/Session/project/claude/cc-123",
+            owner_email="owner@example.com",
+            project_name="project",
+            project_dir="/tmp/project",
+            host="localhost",
+            status="active",
+        )
+
+        assert result["status"] == "success"
+        sql = mock_db.execute.call_args[0][0]
+        assert "INSERT OR REPLACE INTO agent_sessions" in sql
+
+    def test_get_agent_session(self, mock_db):
+        manager = DatabaseManager()
+        mock_db.query_one_as_dict.return_value = {"session_id": "sess-1"}
+        result = manager.get_agent_session("sess-1")
+        assert result["session_id"] == "sess-1"
+
+    def test_create_agent_request(self, mock_db):
+        manager = DatabaseManager()
+        result = manager.create_agent_request(
+            request_id="req-1",
+            agent_id="agent-1",
+            session_id="sess-1",
+            request_type="approval",
+            prompt="Deploy now?",
         )
         assert result["status"] == "success"
-        mock_db.execute.assert_called()
         sql = mock_db.execute.call_args[0][0]
-        assert "INSERT INTO agent_instances" in sql
+        assert "INSERT INTO agent_requests" in sql
 
-    def test_get_agent_instance(self, mock_db):
-        """Test get_agent_instance."""
+    def test_get_agent_request(self, mock_db):
         manager = DatabaseManager()
+        mock_db.query_one_as_dict.return_value = {"request_id": "req-1"}
+        result = manager.get_agent_request("req-1")
+        assert result["request_id"] == "req-1"
 
-        mock_db.query_one_as_dict.return_value = {"instance_id": "inst1", "agent_id": "agent1"}
-
-        result = manager.get_agent_instance("agent1")
-        assert result["instance_id"] == "inst1"
-        mock_db.query_one_as_dict.assert_called()
-
-    def test_create_input_request(self, mock_db):
-        """Test create_input_request."""
+    def test_update_agent_request(self, mock_db):
         manager = DatabaseManager()
-        result = manager.create_input_request("req1", "ag1", "Q")
+        manager.update_agent_request("req-1", status="answered")
+        sql = mock_db.execute.call_args[0][0]
+        assert "UPDATE agent_requests" in sql
+
+    def test_create_session_event(self, mock_db):
+        manager = DatabaseManager()
+        result = manager.create_session_event(
+            event_id="evt-1",
+            agent_id="agent-1",
+            session_id="sess-1",
+            stream_name="Agents-Channel",
+            topic_name="Agents/Session/project/claude/cc-123",
+            sender_email="owner@example.com",
+            direction="inbound",
+            event_type="steer",
+            content="please continue",
+        )
         assert result["status"] == "success"
-        mock_db.execute.assert_called()
-
-    def test_get_input_request(self, mock_db):
-        """Test get_input_request."""
-        manager = DatabaseManager()
-        mock_db.query_one_as_dict.return_value = {"request_id": "req1", "question": "Q"}
-
-        result = manager.get_input_request("req1")
-        assert result["request_id"] == "req1"
-
-    def test_update_input_request(self, mock_db):
-        """Test update_input_request."""
-        manager = DatabaseManager()
-        manager.update_input_request("req1", status="done")
-        mock_db.execute.assert_called()
         sql = mock_db.execute.call_args[0][0]
-        assert "UPDATE user_input_requests" in sql
+        assert "INSERT INTO session_events" in sql
 
-    def test_create_task(self, mock_db):
-        """Test create_task."""
+    def test_get_unacked_session_events(self, mock_db):
         manager = DatabaseManager()
-        manager.create_task("t1", "a1", "name")
-        mock_db.execute.assert_called()
+        mock_db.query_as_dicts.return_value = [{"id": "evt-1"}]
+        events = manager.get_unacked_session_events(session_id="sess-1")
+        assert events == [{"id": "evt-1"}]
 
-    def test_update_task(self, mock_db):
-        """Test update_task."""
+    def test_ack_session_events(self, mock_db):
         manager = DatabaseManager()
-        manager.update_task("t1", progress=50)
-        mock_db.execute.assert_called()
+        manager.ack_session_events(["evt-1"])
+        sql = mock_db.execute.call_args[0][0]
+        assert "UPDATE session_events SET acked = TRUE" in sql
 
-    def test_afk_state(self, mock_db):
-        """Test set/get afk_state."""
+    def test_create_agent_status(self, mock_db):
         manager = DatabaseManager()
-
-        # Set
-        manager.set_afk_state(True)
-        mock_db.execute.assert_called()  # Actually called twice (DELETE then INSERT)
-
-        # Get
-        mock_db.query_one_as_dict.return_value = {"id": 1, "is_afk": True}
-
-        state = manager.get_afk_state()
-        assert state["is_afk"] is True
-
-    def test_agent_status(self, mock_db):
-        """Test create_agent_status."""
-        manager = DatabaseManager()
-        manager.create_agent_status("s1", "type", "idle")
-        mock_db.execute.assert_called()
-
-    def test_agent_events(self, mock_db):
-        """Test event operations."""
-        manager = DatabaseManager()
-
-        # Create
-        manager.create_agent_event("e1", 1, "topic", "sender", "content")
-        mock_db.execute.assert_called()
-
-        # Get unacked
-        mock_db.query_as_dicts.return_value = [{"id": "e1"}]
-
-        events = manager.get_unacked_events()
-        assert len(events) == 1
-        assert events[0]["id"] == "e1"
-
-        # Ack
-        manager.ack_events(["e1"])
+        manager.create_agent_status("s1", "claude-code", "working")
         mock_db.execute.assert_called()

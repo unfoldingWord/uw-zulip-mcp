@@ -48,10 +48,10 @@ The wizard scans for `zuliprc` files, validates credentials against Zulip, and p
 
 | Mode | Command | Tools |
 |------|---------|-------|
-| Full access | `zulipchat-mcp --zulip-config-file ~/.zuliprc` | 19 core |
+| Full access | `zulipchat-mcp --zulip-config-file ~/.zuliprc` | 20 core |
 | Read-only | `--read-only` | 9 (search/read only) |
-| No agents | `--disable-agents` | No agent tools, no background services |
-| Extended | `--extended-tools` | ~55 tools |
+| No agents | `--disable-agents` | No agent tools, listener never starts |
+| Extended | `--extended-tools` | 56 tools |
 | Locked down | `--read-only --disable-agents` | 9 tools, no writes, no agents |
 
 ## Dual identity (user + bot)
