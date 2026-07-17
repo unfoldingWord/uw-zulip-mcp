@@ -61,9 +61,7 @@ def init_audit_logging() -> None:
                 h.close()
 
         handler = logging.FileHandler(audit_file)
-        handler.setFormatter(
-            logging.Formatter("%(message)s")
-        )
+        handler.setFormatter(logging.Formatter("%(message)s"))
         audit_logger.addHandler(handler)
         audit_logger.propagate = False
 
@@ -81,7 +79,14 @@ def _log_event(event: dict[str, Any]) -> None:
     """Serialize and log an audit event dict as JSON.
 
     All values are serialized via json.dumps to prevent log injection.
+    In hosted mode, every event is stamped with the authenticated request
+    user's email (never the API key) for per-user accountability.
     """
+    from .request_credentials import get_request_credentials
+
+    creds = get_request_credentials()
+    if creds is not None:
+        event.setdefault("request_user", creds.email)
     event["timestamp_unix"] = round(time.time(), 3)
     audit_logger.info(json.dumps(event, default=str))
 

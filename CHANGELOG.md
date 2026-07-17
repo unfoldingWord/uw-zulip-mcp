@@ -4,6 +4,11 @@ All notable changes to ZulipChat MCP are documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **Hosted multi-user mode with client-side credential injection** — `--hosted` / `ZULIPCHAT_HOSTED=1`. Clients supply per-request Zulip credentials via `X-Zulip-Email` / `X-Zulip-Key` HTTP headers; the server uses them in-memory for the duration of the request and never stores them (no credential honeypot). The Zulip site stays pinned server-side (`ZULIP_SITE`) so clients cannot redirect credentials to another host. Stream/user/message caches are scoped per identity so one user's visible data is never served to another. Audit events are stamped with the requesting user's email.
+- **OAuth 2.1 for the user → MCP server hop** — env-driven auth provider (`ZULIPCHAT_AUTH_MODE`: `google`, `oidc`, `jwt`, or `static` for dev), powered by FastMCP's auth providers. Optional `ZULIPCHAT_REQUIRE_EMAIL_MATCH=1` cross-checks the OAuth email claim against `X-Zulip-Email`.
+- New docs: [Hosted Mode & Authentication](docs/user-guide/hosted-authentication.md) with threat model, Claude Code setup, and deployment requirements.
+
 ### Changed
 - **Merged upstream v0.7.1** — Brings in the agent control plane (session-scoped agent tools, `ensure_agent_session`, `list_sessions`, `close_agent_session`), Claude Code plugin, explicit FastMCP task support for long-running tools, and lifespan-managed background services. All uW fork hardening (channel filtering, read-only mode, agent disabling, audit logging, configurable transport) is preserved. AFK mode tools are removed upstream; the session model replaces them.
 
