@@ -141,6 +141,14 @@ class ConfigManager:
 
         return False
 
+    def validate_hosted_config(self) -> bool:
+        """Validate configuration for hosted (multi-user) mode.
+
+        Hosted mode needs only the server-pinned site; user credentials
+        arrive per-request via headers and are never configured server-side.
+        """
+        return bool(self.config.site)
+
     def has_bot_credentials(self) -> bool:
         """Check if bot credentials are configured and valid.
 
@@ -243,7 +251,20 @@ def get_current_identity() -> str:
 
 
 def set_current_identity(identity: str) -> None:
-    """Set the current identity ('user' or 'bot')."""
+    """Set the current identity ('user' or 'bot').
+
+    Refused in hosted mode: identity is process-global state, and a hosted
+    server serves many users concurrently. Hosted requests always run as
+    the credential-supplying user; agent-plane operations use the server
+    bot via get_bot_client().
+    """
+    from .core.request_credentials import is_hosted_mode
+
+    if is_hosted_mode():
+        raise ValueError(
+            "Identity switching is unavailable in hosted mode. Requests run "
+            "as the user identified by the X-Zulip-* credential headers."
+        )
     global _current_identity
     if identity not in ("user", "bot"):
         raise ValueError(f"Invalid identity: {identity}. Must be 'user' or 'bot'.")
@@ -255,10 +276,26 @@ def get_client() -> ZulipClientWrapper:
 
     This is the canonical way to get a client - it respects the
     current identity setting from switch_identity().
+
+    When request-scoped credentials are bound (hosted mode, supplied by the
+    MCP client via X-Zulip-* headers), they take precedence and the client
+    is built from them plus the server-pinned site. Nothing is persisted.
     """
     from .core.client import ZulipClientWrapper
+    from .core.request_credentials import get_request_credentials
 
     config = get_config_manager()
+
+    creds = get_request_credentials()
+    if creds is not None:
+        site = config.config.site
+        if not site:
+            raise RuntimeError(
+                "ZULIP_SITE must be configured server-side in hosted mode; "
+                "clients cannot supply the site."
+            )
+        return ZulipClientWrapper(config, credentials=creds, site=site)
+
     use_bot = _current_identity == "bot" and config.has_bot_credentials()
     return ZulipClientWrapper(config, use_bot_identity=use_bot)
 

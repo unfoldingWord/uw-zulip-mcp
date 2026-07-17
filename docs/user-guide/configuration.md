@@ -52,6 +52,7 @@ zulipchat-mcp [options]
 | `--transport MODE` | Transport: `stdio` (default), `http`, `streamable-http`, `sse` |
 | `--host HOST` | Bind address for HTTP/SSE mode (default: `127.0.0.1`) |
 | `--port PORT` | Listen port for HTTP/SSE mode (default: `3000`) |
+| `--hosted` | Multi-user hosted mode: per-request credentials via `X-Zulip-*` headers, none stored server-side ([details](hosted-authentication.md)) |
 
 ## Environment variables
 
@@ -105,6 +106,21 @@ ZULIPCHAT_EXCLUDE_PRIVATE=true
 | `ZULIPCHAT_READ_ONLY` | `false` | Read/search only — write tools not registered |
 | `ZULIPCHAT_DISABLE_AGENTS` | `false` | Agent tools not registered, background services skipped |
 | `ZULIPCHAT_EXTENDED_TOOLS` | `false` | Register all 56 tools |
+
+### Hosted mode & authentication
+
+Full guide: [Hosted Mode & Authentication](hosted-authentication.md).
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ZULIPCHAT_HOSTED` | `false` | Multi-user mode: clients send `X-Zulip-Email` / `X-Zulip-Key` per request; no user credentials server-side. Requires `ZULIP_SITE` and a network transport |
+| `ZULIPCHAT_AUTH_MODE` | `none` | OAuth for the user→server hop: `google`, `oidc`, `jwt`, or `static` (dev only) |
+| `ZULIPCHAT_AUTH_CLIENT_ID` / `ZULIPCHAT_AUTH_CLIENT_SECRET` | — | OAuth client credentials (`google`, `oidc`) |
+| `ZULIPCHAT_AUTH_BASE_URL` | — | Public URL of this MCP server (`google`, `oidc`) |
+| `ZULIPCHAT_AUTH_CONFIG_URL` | — | OIDC discovery URL (`oidc`) |
+| `ZULIPCHAT_AUTH_JWKS_URI` / `ZULIPCHAT_AUTH_ISSUER` / `ZULIPCHAT_AUTH_AUDIENCE` | — | JWT verification (`jwt`) |
+| `ZULIPCHAT_AUTH_STATIC_TOKENS` | — | Comma-separated bearer tokens (`static`, dev/test only) |
+| `ZULIPCHAT_REQUIRE_EMAIL_MATCH` | `false` | Reject calls where the OAuth email claim ≠ `X-Zulip-Email` |
 
 ### Audit logging
 

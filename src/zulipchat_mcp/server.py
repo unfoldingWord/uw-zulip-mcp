@@ -11,7 +11,10 @@ from fastmcp.server.lifespan import lifespan
 from . import __version__
 from .config import ConfigManager, init_config_manager
 from .core.audit import init_audit_logging, is_audit_enabled
+from .core.auth_provider import AuthConfigurationError, build_auth_provider
 from .core.channel_filter import init_channel_filter
+from .core.hosted_middleware import ZulipCredentialMiddleware
+from .core.request_credentials import set_hosted_mode
 from .core.security import set_unsafe_mode
 
 # Optional: Anthropic sampling handler for LLM analytics fallback
@@ -111,6 +114,16 @@ def main() -> None:
         action="store_true",
         help="Disable all agent tools (registration, sessions, messaging, events).",
     )
+    parser.add_argument(
+        "--hosted",
+        action="store_true",
+        help=(
+            "Hosted multi-user mode: clients supply per-request Zulip "
+            "credentials via X-Zulip-Email / X-Zulip-Key headers; no user "
+            "credentials are configured or stored server-side. Requires a "
+            "network transport and ZULIP_SITE."
+        ),
+    )
 
     # Transport options
     parser.add_argument(
@@ -148,8 +161,33 @@ def main() -> None:
         debug=args.debug,
     )
 
+    # Hosted multi-user mode: per-request client credentials, none at rest
+    hosted = args.hosted or os.getenv("ZULIPCHAT_HOSTED", "0") in (
+        "1",
+        "true",
+        "True",
+    )
+    set_hosted_mode(hosted)
+
     # Validate configuration
-    if not config_manager.validate_config():
+    if hosted:
+        if args.transport == "stdio" and not os.getenv("ZULIPCHAT_TRANSPORT"):
+            logger.error(
+                "Hosted mode requires a network transport. "
+                "Use --transport http (or sse)."
+            )
+            return
+        if not config_manager.validate_hosted_config():
+            logger.error(
+                "Hosted mode requires ZULIP_SITE to be set server-side. "
+                "User credentials are supplied per-request by clients."
+            )
+            return
+        logger.info(
+            "HOSTED MODE - per-request credentials via X-Zulip-* headers; "
+            "no user credentials stored server-side"
+        )
+    elif not config_manager.validate_config():
         logger.error(
             "Invalid configuration. Please run 'uv run zulipchat-mcp-setup' first."
         )
@@ -204,6 +242,24 @@ def main() -> None:
             "ANTHROPIC_API_KEY not set - LLM analytics will require client sampling support"
         )
 
+    # OAuth 2.1 auth provider for the user -> MCP server hop (env-driven)
+    try:
+        auth_provider = build_auth_provider()
+    except AuthConfigurationError as e:
+        logger.error("Auth configuration error: %s", e)
+        return
+    if auth_provider is not None:
+        logger.info(
+            "Auth ENABLED (%s) - clients must authenticate to reach this server",
+            os.getenv("ZULIPCHAT_AUTH_MODE"),
+        )
+    elif hosted:
+        logger.warning(
+            "Hosted mode without ZULIPCHAT_AUTH_MODE - the server relies "
+            "solely on per-request Zulip credentials. Enable OAuth (jwt/"
+            "google/oidc) or front with an authenticating proxy."
+        )
+
     # Initialize MCP with modern configuration
     mcp = FastMCP(
         "ZulipChat MCP",
@@ -221,7 +277,12 @@ def main() -> None:
         lifespan=_build_server_lifespan(config_manager, args.enable_listener),
         sampling_handler=sampling_handler,
         sampling_handler_behavior="fallback",  # Use only when client doesn't support sampling
+        auth=auth_provider,
     )
+
+    # Bind per-request Zulip credentials (X-Zulip-* headers) around every
+    # tool call. No-op on stdio, where no HTTP headers exist.
+    mcp.add_middleware(ZulipCredentialMiddleware())
 
     logger.info("FastMCP initialized successfully")
 
@@ -254,16 +315,18 @@ def main() -> None:
     else:
         logger.info("Registered core tool set")
 
-    # Warm user/stream caches for fast fuzzy resolution
-    try:
-        from .config import get_client
+    # Warm user/stream caches for fast fuzzy resolution. Skipped in hosted
+    # mode: there is no server-side user identity to warm caches for.
+    if not hosted:
+        try:
+            from .config import get_client
 
-        _warmup_client = get_client()
-        _warmup_client.get_users()  # populates user_cache via client wrapper
-        _warmup_client.get_streams()  # populates stream_cache via client wrapper
-        logger.info("User and stream caches warmed")
-    except Exception as e:
-        logger.debug(f"Cache warmup skipped: {e}")
+            _warmup_client = get_client()
+            _warmup_client.get_users()  # populates user_cache via client wrapper
+            _warmup_client.get_streams()  # populates stream_cache via client wrapper
+            logger.info("User and stream caches warmed")
+        except Exception as e:
+            logger.debug(f"Cache warmup skipped: {e}")
 
     # Privacy notice on stderr (visible to operator, not to MCP client)
     quiet = os.getenv("ZULIPCHAT_QUIET", "0") in ("1", "true", "True")
@@ -320,6 +383,12 @@ def main() -> None:
         lines.append(
             f"  Agent tools:     {'disabled' if disable_agents else 'enabled'}"
         )
+        if hosted:
+            lines.append("  Hosted mode:     YES (per-request credentials,")
+            lines.append("                   nothing stored server-side)")
+            lines.append(
+                f"  Server auth:     {os.getenv('ZULIPCHAT_AUTH_MODE', 'none')}"
+            )
         lines.append("")
         lines.append("=" * 60)
         lines.append("")
