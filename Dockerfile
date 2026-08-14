@@ -1,7 +1,7 @@
 # =====================================================================
 # 1. Build Stage
 # =====================================================================
-FROM cgr.dev/chainguard/python:latest-dev AS build
+FROM python:3.13-slim AS build
 
 # Set up the working directory
 WORKDIR /app
@@ -9,10 +9,13 @@ WORKDIR /app
 # Optional: Instructs uv to pre-compile executable bytecode for faster startup
 ENV UV_COMPILE_BYTECODE=1
 
-# FIX: Copy files and explicitly grant ownership to Chainguard's nonroot user
-COPY --chown=nonroot:nonroot . /app
+# FIX: Copy files
+COPY . /app
 
-# Install dependencies (uv is already installed in the base -dev image!)
+# Install uv
+RUN pip install uv
+
+# Install dependencies
 RUN uv sync --all-groups 2>&1
 
 # Run tests to gate the build before creating the production image
@@ -22,12 +25,12 @@ RUN uv run pytest tests/ -q --tb=line 2>&1 | tail -n 3
 # =====================================================================
 # 2. Production Stage
 # =====================================================================
-FROM cgr.dev/chainguard/python:latest AS prod
+FROM python:3.13-slim AS prod
 
 WORKDIR /app
 
 # Copy the synchronized application and virtual environment from the build stage
-COPY --chown=nonroot:nonroot --from=build /app /app
+COPY --from=build /app /app
 
 # Add the virtual environment's bin folder to the system PATH.
 # This eliminates the need to use 'uv run' in production entirely!
