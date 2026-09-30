@@ -10,6 +10,7 @@ from fastmcp.server.lifespan import lifespan
 
 from . import __version__
 from .config import ConfigManager, init_config_manager
+from .core import hosted_config
 from .core.audit import init_audit_logging, is_audit_enabled
 from .core.auth_provider import AuthConfigurationError, build_auth_provider
 from .core.channel_filter import init_channel_filter
@@ -118,10 +119,11 @@ def main() -> None:
         "--hosted",
         action="store_true",
         help=(
-            "Hosted multi-user mode: clients supply per-request Zulip "
-            "credentials via X-Zulip-Email / X-Zulip-Key headers; no user "
-            "credentials are configured or stored server-side. Requires a "
-            "network transport and ZULIP_SITE."
+            "Hosted multi-user mode (OAuth2-only): clients authenticate with "
+            "OAuth; the server resolves each user's Zulip API key from the "
+            "OpenBao/Vault store and caches it per identity. New users add "
+            "their key via the /enroll web page. Requires a network transport, "
+            "ZULIP_SITE, an auth provider (ZULIPCHAT_AUTH_MODE), and OpenBao."
         ),
     )
 
@@ -183,10 +185,18 @@ def main() -> None:
                 "User credentials are supplied per-request by clients."
             )
             return
-        logger.info(
-            "HOSTED MODE - per-request credentials via X-Zulip-* headers; "
-            "no user credentials stored server-side"
-        )
+        if hosted_config.vault_enabled():
+            logger.info(
+                "HOSTED MODE (OAuth2-only) - user API keys resolved from the "
+                "OpenBao/Vault store, cached per identity; enrollment via the "
+                "/enroll web page"
+            )
+        else:
+            logger.warning(
+                "HOSTED MODE but OpenBao/Vault is not configured "
+                "(set OPENBAO_TOKEN or OPENBAO_ROLE_ID/OPENBAO_SECRET_ID). "
+                "Authenticated users with no stored key cannot be served."
+            )
     elif not config_manager.validate_config():
         logger.error(
             "Invalid configuration. Please run 'uv run zulipchat-mcp-setup' first."
@@ -280,9 +290,26 @@ def main() -> None:
         auth=auth_provider,
     )
 
-    # Bind per-request Zulip credentials (X-Zulip-* headers) around every
-    # tool call. No-op on stdio, where no HTTP headers exist.
+    # Bind per-request Zulip credentials (OAuth identity -> cache/vault) around
+    # every tool call. No-op on stdio, where there is no OAuth identity.
     mcp.add_middleware(ZulipCredentialMiddleware())
+
+    # Serve the browser enrollment page when hosted with a vault configured.
+    if hosted and hosted_config.vault_enabled():
+        from .core.enrollment_routes import register_enrollment_routes
+
+        register_enrollment_routes(mcp)
+        if auth_provider is None:
+            logger.error(
+                "OAuth2-only hosted mode needs an auth provider to identify "
+                "users. Set ZULIPCHAT_AUTH_MODE (google/oidc/jwt) or front the "
+                "server with an authenticating proxy."
+            )
+        if hosted_config.public_base_url() is None:
+            logger.warning(
+                "ZULIPCHAT_PUBLIC_URL is not set - enrollment links will be "
+                "relative paths. Set it to this server's public URL."
+            )
 
     logger.info("FastMCP initialized successfully")
 

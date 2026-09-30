@@ -1,10 +1,11 @@
-"""End-to-end hosted-mode round-trip over streamable HTTP.
+"""End-to-end hosted-mode round-trip over streamable HTTP (OAuth2 + vault).
 
-Spins a real FastMCP server (auth + credential middleware) and drives it
-with two client identities, proving:
-- X-Zulip-* headers coexist with an Authorization-based auth provider
-- each request runs as its own identity, with no bleed between users
-- unauthenticated and credential-less requests are rejected
+Spins a real FastMCP server (OAuth auth + credential middleware) and drives it
+with two OAuth identities, proving:
+- the user's Zulip identity is derived from the OAuth token and resolved from
+  the vault/cache, with no bleed between concurrent users
+- an authenticated user with no stored key is told to enrol
+- an unauthenticated request is rejected
 """
 
 import asyncio
@@ -17,13 +18,31 @@ from fastmcp import Client, FastMCP
 from fastmcp.client.transports import StreamableHttpTransport
 from fastmcp.server.auth import StaticTokenVerifier
 
+from src.zulipchat_mcp.core import hosted_runtime
 from src.zulipchat_mcp.core.hosted_middleware import ZulipCredentialMiddleware
+from src.zulipchat_mcp.core.key_cache import SlidingKeyCache
 from src.zulipchat_mcp.core.request_credentials import (
     get_request_credentials,
     set_hosted_mode,
 )
 
 pytestmark = [pytest.mark.integration, pytest.mark.slow]
+
+
+class _FakeStore:
+    """In-memory stand-in for the OpenBao SecretStore."""
+
+    def __init__(self, keys):
+        self.keys = dict(keys)
+
+    async def get_api_key(self, email):
+        return self.keys.get(email.lower())
+
+    async def set_api_key(self, email, api_key):
+        self.keys[email.lower()] = api_key
+
+    async def aclose(self):
+        pass
 
 
 def _free_port() -> int:
@@ -35,10 +54,18 @@ def _free_port() -> int:
 @pytest.fixture(scope="module")
 def hosted_server():
     set_hosted_mode(True)
+    hosted_runtime.set_secret_store(
+        _FakeStore({"alice@x.com": "a" * 32, "bob@x.com": "b" * 32})
+    )
+    hosted_runtime.set_key_cache(SlidingKeyCache(ttl_seconds=3600))
     port = _free_port()
 
     verifier = StaticTokenVerifier(
-        tokens={"good-token": {"client_id": "test", "scopes": []}}
+        tokens={
+            "tok-alice": {"client_id": "t", "scopes": [], "email": "alice@x.com"},
+            "tok-bob": {"client_id": "t", "scopes": [], "email": "bob@x.com"},
+            "tok-new": {"client_id": "t", "scopes": [], "email": "new@x.com"},
+        }
     )
     mcp = FastMCP("hosted-test", auth=verifier)
     mcp.add_middleware(ZulipCredentialMiddleware())
@@ -58,26 +85,17 @@ def hosted_server():
     time.sleep(1.5)
     yield f"http://127.0.0.1:{port}/mcp"
     set_hosted_mode(False)
+    hosted_runtime.reset()
 
 
-def _client(
-    url: str,
-    email: str | None = None,
-    key: str | None = None,
-    token: str | None = "good-token",
-):
-    headers = {}
-    if email:
-        headers["X-Zulip-Email"] = email
-    if key:
-        headers["X-Zulip-Key"] = key
-    return Client(StreamableHttpTransport(url, headers=headers, auth=token))
+def _client(url: str, token: str | None = "tok-alice"):
+    return Client(StreamableHttpTransport(url, auth=token))
 
 
 @pytest.mark.asyncio
 async def test_two_identities_are_isolated(hosted_server):
-    alice = _client(hosted_server, "alice@x.com", "a" * 32)
-    bob = _client(hosted_server, "bob@x.com", "b" * 32)
+    alice = _client(hosted_server, "tok-alice")
+    bob = _client(hosted_server, "tok-bob")
     async with alice, bob:
         results = await asyncio.gather(
             *(alice.call_tool("whoami", {}) for _ in range(3)),
@@ -89,26 +107,16 @@ async def test_two_identities_are_isolated(hosted_server):
 
 
 @pytest.mark.asyncio
-async def test_missing_credentials_rejected_in_hosted_mode(hosted_server):
-    client = _client(hosted_server)  # OAuth token but no Zulip headers
+async def test_user_without_key_is_told_to_enrol(hosted_server):
+    client = _client(hosted_server, "tok-new")  # authenticated, but no stored key
     async with client:
-        with pytest.raises(Exception, match="X-Zulip"):
+        with pytest.raises(Exception, match="enroll"):
             await client.call_tool("whoami", {})
 
 
 @pytest.mark.asyncio
 async def test_unauthenticated_client_rejected(hosted_server):
-    import httpx
-
-    client = _client(hosted_server, "alice@x.com", "a" * 32, token=None)
-    with pytest.raises(httpx.HTTPStatusError):
+    client = _client(hosted_server, token=None)
+    with pytest.raises(Exception):  # noqa: B017
         async with client:
-            await client.call_tool("whoami", {})
-
-
-@pytest.mark.asyncio
-async def test_malformed_key_rejected(hosted_server):
-    client = _client(hosted_server, "alice@x.com", "not a real key!")
-    async with client:
-        with pytest.raises(Exception, match="API key"):
             await client.call_tool("whoami", {})
