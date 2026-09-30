@@ -1,17 +1,13 @@
 """Tests for request-scoped credential handling (hosted mode)."""
 
-from unittest.mock import patch
-
 import pytest
 
 from src.zulipchat_mcp.core.request_credentials import (
-    CredentialResolutionError,
     RequestCredentials,
     bind_request_credentials,
     current_cache_scope,
     get_request_credentials,
     is_hosted_mode,
-    resolve_credentials_from_headers,
     set_hosted_mode,
     unbind_request_credentials,
 )
@@ -97,56 +93,3 @@ class TestHostedMode:
         assert is_hosted_mode() is True
         set_hosted_mode(False)
         assert is_hosted_mode() is False
-
-
-def _headers(headers: dict):
-    return patch(
-        "fastmcp.server.dependencies.get_http_headers",
-        return_value=headers,
-    )
-
-
-class TestResolveFromHeaders:
-    def test_no_headers_returns_none(self):
-        with _headers({}):
-            assert resolve_credentials_from_headers() is None
-
-    def test_valid_headers(self):
-        with _headers({"x-zulip-email": "a@b.com", "x-zulip-key": VALID_KEY}):
-            creds = resolve_credentials_from_headers()
-        assert creds is not None
-        assert creds.email == "a@b.com"
-        assert creds.api_key == VALID_KEY
-
-    def test_partial_headers_rejected(self):
-        with _headers({"x-zulip-email": "a@b.com"}):
-            with pytest.raises(CredentialResolutionError):
-                resolve_credentials_from_headers()
-        with _headers({"x-zulip-key": VALID_KEY}):
-            with pytest.raises(CredentialResolutionError):
-                resolve_credentials_from_headers()
-
-    def test_bad_email_rejected(self):
-        with _headers({"x-zulip-email": "not-an-email", "x-zulip-key": VALID_KEY}):
-            with pytest.raises(CredentialResolutionError):
-                resolve_credentials_from_headers()
-
-    def test_bad_key_rejected(self):
-        for bad in (
-            "short",
-            "x" * 100,
-            "has spaces" + "a" * 24,
-            "key/../../etc" + "a" * 20,
-        ):
-            with _headers({"x-zulip-email": "a@b.com", "x-zulip-key": bad}):
-                with pytest.raises(CredentialResolutionError):
-                    resolve_credentials_from_headers()
-
-    def test_error_messages_never_contain_key_material(self):
-        secret = (
-            "S3cretS3cretS3cretS3cret!!"  # invalid (has !), would be echoed if unsafe
-        )
-        with _headers({"x-zulip-email": "a@b.com", "x-zulip-key": secret}):
-            with pytest.raises(CredentialResolutionError) as exc_info:
-                resolve_credentials_from_headers()
-        assert secret not in str(exc_info.value)

@@ -1,106 +1,144 @@
-# Hosted Mode & Authentication
+# Hosted Mode & Authentication (OAuth2-only)
 
-Hosted mode turns one shared uw-zulip-mcp deployment into a multi-user
-service **without storing any user credential server-side**. It implements
-two independent authentication hops:
+Hosted mode turns one shared uw-zulip-mcp deployment into a multi-user service.
+Clients authenticate with **OAuth2 only**; the server resolves each user's Zulip
+API key from an **OpenBao/Vault** secret store and uses it to act in Zulip as
+that user. It implements two authentication hops:
 
 | Hop | Mechanism | What it answers |
 |-----|-----------|-----------------|
-| User → MCP server | OAuth 2.1 (FastMCP auth provider) | "May you talk to this server at all?" |
-| MCP server → Zulip | Per-request user credentials via headers | "What may you see and do in Zulip?" |
+| User → MCP server | OAuth 2.1 (FastMCP auth provider) | "Who are you?" |
+| MCP server → Zulip | The user's Zulip API key, fetched from the vault | "What may you see and do in Zulip?" |
+
+The user never sends a Zulip API key with requests. On first contact a user is
+sent to a web page to add their key once; from then on the server fetches it
+from the vault (cached in memory) automatically.
+
+## How it works
+
+1. The MCP client completes the OAuth login. Every request carries the OAuth
+   token; the server reads the user's email from the validated token.
+2. On a tool call, the server looks up the user's Zulip API key:
+   in-memory cache first, then the vault.
+3. **First contact (no key stored):** the tool call returns a short-lived,
+   signed `/enroll` link. The user opens it, follows the instructions to copy
+   their Zulip API key, and submits it. The server validates the key against
+   Zulip, confirms the key belongs to the same email, then stores it in the
+   vault and caches it.
+4. Subsequent calls run as that user with no further prompts.
+5. Cached keys expire after a day of inactivity (sliding TTL) and are re-fetched
+   from the vault on demand.
 
 ## Threat model (what lives where)
 
-- **User Zulip API keys: nowhere on the server.** Supplied by the client on
-  every request via headers, held in a request-scoped context variable,
-  used to call Zulip, then dropped. Never written to disk, database, or
-  logs. A compromise of the server's disk and environment yields **zero
-  user keys**.
-- **Org bot key: server-side env/zuliprc**, same as today. One rotatable
-  identity used by the agent control plane and message listener.
-- **User keys at rest: on each user's own machine** (in their MCP client
-  config), same trust model as a local `~/.zuliprc`.
-- **Zulip site: pinned server-side** (`ZULIP_SITE`). Clients cannot point
-  the server at another host, which closes the SSRF/key-exfiltration hole
-  a client-supplied site would open.
+- **User Zulip API keys: encrypted in OpenBao/Vault**, fetched on demand and
+  cached in memory only. Never written to the server's disk or logs.
+- **The server holds vault credentials** (AppRole) that can read user keys on
+  demand. Treat the server and its vault policy as sensitive: use a
+  least-privilege policy, short cache TTLs, and audit logging. A live server
+  compromise can expose keys — this is the accepted trade-off of OAuth2-only.
+- **Identity binding:** a submitted key is stored only if Zulip confirms it and
+  its Zulip email matches the OAuth email, so a user cannot bind someone else's
+  account.
+- **Zulip site: pinned server-side** (`ZULIP_SITE`). Clients cannot point the
+  server at another host.
+- **Org bot key: server-side env/zuliprc**, unchanged, for the agent control
+  plane and message listener.
 
-Per-user permissions come for free: every Zulip call runs with the
-requesting user's own key, so Zulip's native permission model (private
-streams, DMs, roles) applies — on top of the fork's channel filter, which
-still applies globally.
+Per-user permissions come for free: every Zulip call runs with the requesting
+user's own key, so Zulip's native permission model applies (on top of the
+fork's channel filter, which still applies globally).
 
 ## Server setup
 
 ```bash
 ZULIP_SITE=https://your-org.zulipchat.com \
 ZULIPCHAT_HOSTED=1 \
-zulipchat-mcp --transport http --host 0.0.0.0 --port 3000
+ZULIPCHAT_AUTH_MODE=google \
+ZULIPCHAT_AUTH_CLIENT_ID=... ZULIPCHAT_AUTH_CLIENT_SECRET=... \
+ZULIPCHAT_AUTH_BASE_URL=https://mcp.your-org.example \
+ZULIPCHAT_PUBLIC_URL=https://mcp.your-org.example \
+ZULIPCHAT_ENROLL_SECRET=$(openssl rand -hex 32) \
+OPENBAO_ADDR=https://bao.your-org.example \
+OPENBAO_ROLE_ID=... OPENBAO_SECRET_ID=... \
+zulipchat-mcp --hosted --transport http --host 0.0.0.0 --port 3000
 ```
 
-or use the `--hosted` flag. Hosted mode requires a network transport and
-refuses to start on stdio. Optionally add the org bot (`ZULIP_BOT_EMAIL`,
-`ZULIP_BOT_API_KEY`) for agent-plane features.
-
-In hosted mode:
-
-- Tool calls without `X-Zulip-Email` / `X-Zulip-Key` headers fail with a
-  clear error. There is no server-side user fallback.
-- `switch_identity` is disabled (identity is per-request, not global).
-- Startup cache warmup is skipped; caches fill per identity on demand and
-  are **scoped per user** so one user's stream/user lists are never served
-  to another.
-- Audit events (when `ZULIPCHAT_AUDIT_ENABLED=true`) are stamped with the
-  requesting user's email — never the key.
+Hosted mode requires a network transport and refuses to start on stdio.
 
 ## OAuth 2.1 for the user → server hop
 
-Configured entirely via environment (`ZULIPCHAT_AUTH_MODE`):
+Configured via `ZULIPCHAT_AUTH_MODE`:
 
 | Mode | Use case | Required env |
 |------|----------|--------------|
-| `none` (default) | Local use, or auth handled by a fronting proxy | — |
 | `google` | Google Workspace orgs (recommended for unfoldingWord) | `ZULIPCHAT_AUTH_CLIENT_ID`, `ZULIPCHAT_AUTH_CLIENT_SECRET`, `ZULIPCHAT_AUTH_BASE_URL` |
 | `oidc` | Any OIDC identity provider | `ZULIPCHAT_AUTH_CONFIG_URL`, client id/secret, `ZULIPCHAT_AUTH_BASE_URL` |
 | `jwt` | Bearer JWTs minted by an external IdP/gateway | `ZULIPCHAT_AUTH_JWKS_URI`, `ZULIPCHAT_AUTH_ISSUER`, optional `ZULIPCHAT_AUTH_AUDIENCE` |
 | `static` | Development/testing only | `ZULIPCHAT_AUTH_STATIC_TOKENS` |
 
-`ZULIPCHAT_AUTH_BASE_URL` is the public URL of the MCP server itself
-(the OAuth callback is registered under it).
+An auth provider is required in OAuth2-only mode — it is how the server learns
+the user's email.
 
-Optional: `ZULIPCHAT_REQUIRE_EMAIL_MATCH=1` rejects calls where the OAuth
-identity's email claim does not match `X-Zulip-Email` — a user cannot pair
-their own OAuth session with someone else's leaked Zulip key unnoticed.
+## OpenBao / Vault
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `OPENBAO_ADDR` | `http://127.0.0.1:8200` | Vault address |
+| `OPENBAO_ROLE_ID` / `OPENBAO_SECRET_ID` | — | AppRole login (recommended) |
+| `OPENBAO_TOKEN` | — | Direct token (dev/testing; bypasses AppRole) |
+| `OPENBAO_KV_MOUNT` | `secret` | KV v2 mount |
+| `OPENBAO_KV_PATH` | `zulip-mcp/users` | Base path for user secrets |
+| `OPENBAO_NAMESPACE` | — | Optional namespace |
+| `OPENBAO_TLS_VERIFY` | `1` | Set `0` to disable TLS verification (dev only) |
+
+Each user's key is stored at `<mount>/data/<path>/<sha256(email)>`. The hash
+keeps the path clean and avoids listing everyone's email; operators can still
+map an email to its path by hashing the address the same way.
+
+The AppRole policy only needs create/read/update on that path prefix.
+
+## Enrollment and cool-off
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `ZULIPCHAT_ENROLL_SECRET` | random per-process | HMAC secret for enrollment links. Set this in production so links survive restarts and work across replicas. |
+| `ZULIPCHAT_PUBLIC_URL` | `ZULIPCHAT_AUTH_BASE_URL` | Public URL used to build enrollment links |
+| `ZULIPCHAT_ENROLL_TOKEN_TTL_SECONDS` | `900` | Enrollment link lifetime |
+| `ZULIPCHAT_ENROLL_MAX_ATTEMPTS` | `6` | Failed submissions before a cool-off |
+| `ZULIPCHAT_ENROLL_COOLOFF_SECONDS` | `900` | Cool-off duration after too many failures |
+| `ZULIPCHAT_KEY_CACHE_TTL_SECONDS` | `86400` | In-memory key cache inactivity TTL |
 
 ## Client setup (Claude Code)
 
-Each user finds their API key in Zulip under **Personal settings →
-Account & privacy → API key**, then:
-
 ```bash
-claude mcp add --transport http zulipchat https://mcp.your-org.example/mcp \
-  --header "X-Zulip-Email: you@your-org.org" \
-  --header "X-Zulip-Key: YOUR_ZULIP_API_KEY"
+claude mcp add --transport http zulipchat https://mcp.your-org.example/mcp
 ```
 
-When OAuth is enabled, Claude Code runs the browser flow automatically on
-first connect; the Zulip headers ride along on every request afterwards.
+Claude Code runs the OAuth browser flow on first connect. The first time you run
+a Zulip tool, you receive an `/enroll` link; open it, paste your Zulip API key
+(from **Personal settings → Account & privacy → API key** in Zulip), and submit.
+After that, everything works automatically.
 
-**Key rotation / revocation:** invalidate the key in Zulip (same settings
-page), then update the header in your client config. Nothing to clean up
-server-side — the server never had it.
+**Key rotation / revocation:** rotate the key in Zulip, then run any Zulip tool
+again and use the fresh `/enroll` link to submit the new key. An operator can
+also delete a user's stored key from the vault.
 
 ## Deployment requirements
 
-- **TLS is mandatory.** Credentials travel in headers; terminate HTTPS at
-  the proxy or use end-to-end TLS.
-- **Do not log request headers** at the reverse proxy. Default `nginx`/
-  `caddy` access logs don't; custom log formats must exclude `X-Zulip-*`.
-- Rate-limit per client at the proxy if the server is internet-facing.
+- **TLS is mandatory.** The enrollment page and OAuth tokens must travel over
+  HTTPS. Terminate TLS at the proxy or use end-to-end TLS.
+- **Do not log request bodies or the enrollment form** at the reverse proxy.
+- **Single vs multiple replicas:** the key cache and the cool-off counters are
+  in-memory per replica. That is fine for the cache (a cold replica simply
+  re-fetches from the vault). If you run more than one replica, move the
+  cool-off counters to a shared store so the limit holds across replicas.
+- Set `ZULIPCHAT_ENROLL_SECRET` explicitly so enrollment links are valid across
+  restarts and replicas.
 
 ## What this deliberately does not do
 
-- No per-user keys at rest, encrypted or otherwise (that was Option 3 —
-  the honeypot).
-- No OAuth to Zulip itself — Zulip has no OAuth provider. If that ever
-  ships upstream, the second hop can be swapped without changing the
-  first.
+- No OAuth token is forwarded to Zulip — Zulip's API has no OAuth. The server
+  exchanges the OAuth identity for the user's stored API key instead.
+- No per-user keys are kept on the server's disk; they live in the vault and a
+  short-lived in-memory cache.

@@ -113,14 +113,36 @@ Full guide: [Hosted Mode & Authentication](hosted-authentication.md).
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `ZULIPCHAT_HOSTED` | `false` | Multi-user mode: clients send `X-Zulip-Email` / `X-Zulip-Key` per request; no user credentials server-side. Requires `ZULIP_SITE` and a network transport |
+| `ZULIPCHAT_HOSTED` | `false` | OAuth2-only multi-user mode: clients authenticate with OAuth; the server resolves each user's Zulip API key from OpenBao/Vault. Requires `ZULIP_SITE`, an auth provider, OpenBao, and a network transport |
 | `ZULIPCHAT_AUTH_MODE` | `none` | OAuth for the user→server hop: `google`, `oidc`, `jwt`, or `static` (dev only) |
 | `ZULIPCHAT_AUTH_CLIENT_ID` / `ZULIPCHAT_AUTH_CLIENT_SECRET` | — | OAuth client credentials (`google`, `oidc`) |
 | `ZULIPCHAT_AUTH_BASE_URL` | — | Public URL of this MCP server (`google`, `oidc`) |
 | `ZULIPCHAT_AUTH_CONFIG_URL` | — | OIDC discovery URL (`oidc`) |
 | `ZULIPCHAT_AUTH_JWKS_URI` / `ZULIPCHAT_AUTH_ISSUER` / `ZULIPCHAT_AUTH_AUDIENCE` | — | JWT verification (`jwt`) |
 | `ZULIPCHAT_AUTH_STATIC_TOKENS` | — | Comma-separated bearer tokens (`static`, dev/test only) |
-| `ZULIPCHAT_REQUIRE_EMAIL_MATCH` | `false` | Reject calls where the OAuth email claim ≠ `X-Zulip-Email` |
+
+#### OpenBao / Vault (user key store)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OPENBAO_ADDR` | `http://127.0.0.1:8200` | OpenBao/Vault address |
+| `OPENBAO_ROLE_ID` / `OPENBAO_SECRET_ID` | — | AppRole login (recommended) |
+| `OPENBAO_TOKEN` | — | Direct token (dev/testing; bypasses AppRole) |
+| `OPENBAO_KV_MOUNT` | `secret` | KV v2 mount point |
+| `OPENBAO_KV_PATH` | `zulip-mcp/users` | Base path for user secrets |
+| `OPENBAO_NAMESPACE` | — | Optional namespace header |
+| `OPENBAO_TLS_VERIFY` | `true` | Set `0` to disable TLS verification (dev only) |
+
+#### Enrollment & key cache
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ZULIPCHAT_ENROLL_SECRET` | random per-process | HMAC secret for enrollment links; set in production |
+| `ZULIPCHAT_PUBLIC_URL` | `ZULIPCHAT_AUTH_BASE_URL` | Public URL used to build enrollment links |
+| `ZULIPCHAT_ENROLL_TOKEN_TTL_SECONDS` | `900` | Enrollment link lifetime |
+| `ZULIPCHAT_ENROLL_MAX_ATTEMPTS` | `6` | Failed submissions before a cool-off |
+| `ZULIPCHAT_ENROLL_COOLOFF_SECONDS` | `900` | Cool-off duration after too many failures |
+| `ZULIPCHAT_KEY_CACHE_TTL_SECONDS` | `86400` | In-memory key cache inactivity TTL (sliding) |
 
 ### Audit logging
 

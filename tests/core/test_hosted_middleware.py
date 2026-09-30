@@ -1,30 +1,29 @@
-"""Tests for the hosted-mode credential middleware."""
+"""Tests for the hosted-mode credential middleware (OAuth2 + vault model)."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastmcp.exceptions import ToolError
 
+from src.zulipchat_mcp.core.credential_resolver import (
+    CredentialResolutionUnavailable,
+    EnrollmentRequired,
+)
 from src.zulipchat_mcp.core.hosted_middleware import ZulipCredentialMiddleware
 from src.zulipchat_mcp.core.request_credentials import (
+    RequestCredentials,
     get_request_credentials,
     set_hosted_mode,
 )
 
 VALID_KEY = "a" * 32
+_RESOLVE = "src.zulipchat_mcp.core.hosted_middleware.resolve_request_credentials"
 
 
 @pytest.fixture(autouse=True)
 def _reset_hosted_mode():
     yield
     set_hosted_mode(False)
-
-
-def _headers(headers: dict):
-    return patch(
-        "fastmcp.server.dependencies.get_http_headers",
-        return_value=headers,
-    )
 
 
 @pytest.fixture
@@ -45,14 +44,13 @@ async def test_binds_credentials_during_call(middleware, context):
         observed["creds"] = get_request_credentials()
         return "ok"
 
-    with _headers({"x-zulip-email": "a@b.com", "x-zulip-key": VALID_KEY}):
+    creds = RequestCredentials(email="a@b.com", api_key=VALID_KEY)
+    with patch(_RESOLVE, new=AsyncMock(return_value=creds)):
         result = await middleware.on_call_tool(context, call_next)
 
     assert result == "ok"
-    assert observed["creds"] is not None
     assert observed["creds"].email == "a@b.com"
-    # Unbound after the call
-    assert get_request_credentials() is None
+    assert get_request_credentials() is None  # unbound after
 
 
 @pytest.mark.asyncio
@@ -60,7 +58,8 @@ async def test_unbinds_on_exception(middleware, context):
     async def call_next(ctx):
         raise RuntimeError("tool blew up")
 
-    with _headers({"x-zulip-email": "a@b.com", "x-zulip-key": VALID_KEY}):
+    creds = RequestCredentials(email="a@b.com", api_key=VALID_KEY)
+    with patch(_RESOLVE, new=AsyncMock(return_value=creds)):
         with pytest.raises(RuntimeError):
             await middleware.on_call_tool(context, call_next)
 
@@ -68,68 +67,42 @@ async def test_unbinds_on_exception(middleware, context):
 
 
 @pytest.mark.asyncio
-async def test_no_headers_passthrough_in_local_mode(middleware, context):
+async def test_local_mode_passthrough(middleware, context):
+    """No OAuth identity and not hosted: fall through to env credentials."""
     call_next = AsyncMock(return_value="ok")
-    with _headers({}):
+    with patch(_RESOLVE, new=AsyncMock(return_value=None)):
         result = await middleware.on_call_tool(context, call_next)
     assert result == "ok"
     call_next.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_hosted_mode_requires_credentials(middleware, context):
+async def test_hosted_no_identity_rejected(middleware, context):
     set_hosted_mode(True)
     call_next = AsyncMock()
-    with _headers({}):
-        with pytest.raises(ToolError, match="X-Zulip-Email"):
+    with patch(_RESOLVE, new=AsyncMock(return_value=None)):
+        with pytest.raises(ToolError, match="no authenticated identity"):
             await middleware.on_call_tool(context, call_next)
     call_next.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_malformed_credentials_rejected(middleware, context):
+async def test_enrollment_required_returns_link(middleware, context):
+    set_hosted_mode(True)
     call_next = AsyncMock()
-    with _headers({"x-zulip-email": "a@b.com", "x-zulip-key": "bad key!"}):
-        with pytest.raises(ToolError):
+    err = EnrollmentRequired("new@b.com")
+    with patch(_RESOLVE, new=AsyncMock(side_effect=err)):
+        with pytest.raises(ToolError, match="/enroll"):
             await middleware.on_call_tool(context, call_next)
     call_next.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_email_match_enforced_when_enabled(middleware, context, monkeypatch):
-    monkeypatch.setenv("ZULIPCHAT_REQUIRE_EMAIL_MATCH", "1")
+async def test_vault_unavailable_rejected(middleware, context):
+    set_hosted_mode(True)
     call_next = AsyncMock()
-
-    token = MagicMock()
-    token.claims = {"email": "someone-else@b.com"}
-    with _headers({"x-zulip-email": "a@b.com", "x-zulip-key": VALID_KEY}):
-        with patch("fastmcp.server.dependencies.get_access_token", return_value=token):
-            with pytest.raises(ToolError, match="does not match"):
-                await middleware.on_call_tool(context, call_next)
+    err = CredentialResolutionUnavailable("vault down")
+    with patch(_RESOLVE, new=AsyncMock(side_effect=err)):
+        with pytest.raises(ToolError, match="try again"):
+            await middleware.on_call_tool(context, call_next)
     call_next.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_email_match_passes_on_same_identity(middleware, context, monkeypatch):
-    monkeypatch.setenv("ZULIPCHAT_REQUIRE_EMAIL_MATCH", "1")
-    call_next = AsyncMock(return_value="ok")
-
-    token = MagicMock()
-    token.claims = {"email": "A@B.com"}  # case-insensitive match
-    with _headers({"x-zulip-email": "a@b.com", "x-zulip-key": VALID_KEY}):
-        with patch("fastmcp.server.dependencies.get_access_token", return_value=token):
-            result = await middleware.on_call_tool(context, call_next)
-    assert result == "ok"
-
-
-@pytest.mark.asyncio
-async def test_email_match_skipped_without_oauth_token(
-    middleware, context, monkeypatch
-):
-    """No auth provider (e.g. proxy-fronted deployment) — match check is moot."""
-    monkeypatch.setenv("ZULIPCHAT_REQUIRE_EMAIL_MATCH", "1")
-    call_next = AsyncMock(return_value="ok")
-    with _headers({"x-zulip-email": "a@b.com", "x-zulip-key": VALID_KEY}):
-        with patch("fastmcp.server.dependencies.get_access_token", return_value=None):
-            result = await middleware.on_call_tool(context, call_next)
-    assert result == "ok"
