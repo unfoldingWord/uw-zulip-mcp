@@ -120,6 +120,7 @@ Full guide: [Hosted Mode & Authentication](hosted-authentication.md).
 | `ZULIPCHAT_AUTH_CONFIG_URL` | — | OIDC discovery URL (`oidc`) |
 | `ZULIPCHAT_AUTH_JWKS_URI` / `ZULIPCHAT_AUTH_ISSUER` / `ZULIPCHAT_AUTH_AUDIENCE` | — | JWT verification (`jwt`) |
 | `ZULIPCHAT_AUTH_STATIC_TOKENS` | — | Comma-separated bearer tokens (`static`, dev/test only) |
+| `ZULIPCHAT_AUTH_SCOPES` | `openid email profile` | Scopes to request (`google`, `oidc`). The email scope is required — users are keyed by email |
 
 #### OpenBao / Vault (user key store)
 

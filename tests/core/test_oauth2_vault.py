@@ -438,3 +438,21 @@ def test_enroll_post_invalid_token_rejected(monkeypatch):
         "/enroll", data={"token": "bad", "api_key": "a" * 32}
     )
     assert resp.status_code == 400
+
+
+# --- auth scopes -----------------------------------------------------------
+
+
+def test_auth_scopes_default_includes_email(monkeypatch):
+    from src.zulipchat_mcp.core import auth_provider
+
+    monkeypatch.delenv("ZULIPCHAT_AUTH_SCOPES", raising=False)
+    scopes = auth_provider._scopes(["openid", "email", "profile"])
+    assert "email" in scopes
+
+
+def test_auth_scopes_env_override(monkeypatch):
+    from src.zulipchat_mcp.core import auth_provider
+
+    monkeypatch.setenv("ZULIPCHAT_AUTH_SCOPES", "openid, email , profile extra")
+    assert auth_provider._scopes(["openid"]) == ["openid", "email", "profile", "extra"]

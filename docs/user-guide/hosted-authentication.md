@@ -80,6 +80,13 @@ Configured via `ZULIPCHAT_AUTH_MODE`:
 An auth provider is required in OAuth2-only mode — it is how the server learns
 the user's email.
 
+**The email scope is required.** The server keys each user by the `email` claim
+in their OAuth token. For `google` and `oidc`, scopes default to
+`openid email profile`; override with `ZULIPCHAT_AUTH_SCOPES` if needed. If the
+token has no email claim, tool calls fail with "no authenticated identity" and
+the server logs the claims it did receive. For `jwt` mode, ensure your IdP puts
+`email` in the JWT.
+
 ## OpenBao / Vault
 
 | Variable | Default | Purpose |

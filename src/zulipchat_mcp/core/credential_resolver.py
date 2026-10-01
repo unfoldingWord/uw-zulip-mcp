@@ -42,7 +42,15 @@ def oauth_email() -> str | None:
         return None
     claims = token.claims or {}
     email = claims.get("email")
-    return str(email).strip().lower() if email else None
+    if not email:
+        logger.warning(
+            "OAuth token has no 'email' claim (claims present: %s). Request the "
+            "email scope (e.g. ZULIPCHAT_AUTH_SCOPES='openid email profile' for "
+            "google/oidc) or ensure your IdP puts email in the token.",
+            sorted(claims.keys()),
+        )
+        return None
+    return str(email).strip().lower()
 
 
 async def resolve_request_credentials() -> RequestCredentials | None:

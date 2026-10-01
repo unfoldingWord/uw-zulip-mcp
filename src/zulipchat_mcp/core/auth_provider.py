@@ -18,6 +18,10 @@ Env-driven so deployments pick a provider without code changes:
     ZULIPCHAT_AUTH_MODE=static   Fixed bearer tokens — DEV/TEST ONLY
         ZULIPCHAT_AUTH_STATIC_TOKENS Comma-separated tokens
 
+    ZULIPCHAT_AUTH_SCOPES        Scopes to request (google/oidc), space- or
+        comma-separated. Defaults to "openid email profile". The email scope
+        is required: OAuth2-only hosted mode keys users by their email claim.
+
 This hop answers "may you talk to this server at all" and provides the
 audited user identity. Zulip authorization is separate: the per-request
 X-Zulip-* credentials (see request_credentials.py).
@@ -46,6 +50,16 @@ def _require(name: str) -> str:
             f"{os.getenv('ZULIPCHAT_AUTH_MODE')}"
         )
     return value
+
+
+def _scopes(default: list[str]) -> list[str]:
+    """OAuth scopes to request, from ZULIPCHAT_AUTH_SCOPES or a default.
+
+    OAuth2-only hosted mode keys users by email, so the email scope must be
+    granted or the token carries no email claim. The default includes it.
+    """
+    raw = os.getenv("ZULIPCHAT_AUTH_SCOPES", "").replace(",", " ").split()
+    return raw or default
 
 
 def build_auth_provider() -> AuthProvider | None:
@@ -77,6 +91,7 @@ def build_auth_provider() -> AuthProvider | None:
             client_id=_require("ZULIPCHAT_AUTH_CLIENT_ID"),
             client_secret=_require("ZULIPCHAT_AUTH_CLIENT_SECRET"),
             base_url=_require("ZULIPCHAT_AUTH_BASE_URL"),
+            required_scopes=_scopes(["openid", "email", "profile"]),
         )
 
     if mode == "oidc":
@@ -87,6 +102,7 @@ def build_auth_provider() -> AuthProvider | None:
             client_id=_require("ZULIPCHAT_AUTH_CLIENT_ID"),
             client_secret=_require("ZULIPCHAT_AUTH_CLIENT_SECRET"),
             base_url=_require("ZULIPCHAT_AUTH_BASE_URL"),
+            required_scopes=_scopes(["openid", "email", "profile"]),
         )
 
     if mode == "static":
