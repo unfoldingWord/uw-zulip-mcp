@@ -189,7 +189,9 @@ async def listen_events(
                                         callback_url, json={"events": events}
                                     )
                             except Exception as e:
-                                logger.warning("Event callback to %s failed: %s", callback_url, e)
+                                logger.warning(
+                                    "Event callback to %s failed: %s", callback_url, e
+                                )
 
                 # Sleep before next poll
                 await asyncio.sleep(poll_interval)

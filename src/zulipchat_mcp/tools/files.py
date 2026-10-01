@@ -49,7 +49,7 @@ def _normalize_upload_path(path: str) -> str:
     if normalized_path.startswith("/api/user_uploads/"):
         return normalized_path[len("/api") :]
     if normalized_path.startswith("api/user_uploads/"):
-        return f"/{normalized_path[len('api/'):]}"
+        return f"/{normalized_path[len('api/') :]}"
     if normalized_path.startswith("/user_uploads/"):
         return normalized_path
     if normalized_path.startswith("user_uploads/"):
@@ -100,9 +100,9 @@ def _resolve_file_url(client: Any, file_id: str) -> str:
 def _resolve_download_credentials(client: Any) -> tuple[str, str]:
     """Resolve credentials used for authenticated file downloads."""
     sdk_client = getattr(client, "client", None)
-    email = _coerce_nonempty_str(getattr(sdk_client, "email", None)) or _coerce_nonempty_str(
-        getattr(client, "current_email", None)
-    )
+    email = _coerce_nonempty_str(
+        getattr(sdk_client, "email", None)
+    ) or _coerce_nonempty_str(getattr(client, "current_email", None))
     api_key = _coerce_nonempty_str(getattr(sdk_client, "api_key", None))
 
     config_manager = getattr(client, "config_manager", None)
@@ -117,7 +117,9 @@ def _resolve_download_credentials(client: Any) -> tuple[str, str]:
         # over what the SDK client might have loaded from a generic config file.
         if identity == "bot":
             config_bot_email = _coerce_nonempty_str(getattr(config, "bot_email", None))
-            config_bot_api_key = _coerce_nonempty_str(getattr(config, "bot_api_key", None))
+            config_bot_api_key = _coerce_nonempty_str(
+                getattr(config, "bot_api_key", None)
+            )
             if config_bot_email and config_bot_api_key:
                 email = config_bot_email
                 api_key = config_bot_api_key

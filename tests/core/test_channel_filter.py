@@ -293,8 +293,16 @@ class TestFilterMessages:
             )
         )
         messages = [
-            {"type": "stream", "display_recipient": "30 Infrastructure", "content": "ok"},
-            {"type": "stream", "display_recipient": "00.16 Prayer Requests", "content": "pray"},
+            {
+                "type": "stream",
+                "display_recipient": "30 Infrastructure",
+                "content": "ok",
+            },
+            {
+                "type": "stream",
+                "display_recipient": "00.16 Prayer Requests",
+                "content": "pray",
+            },
             {"type": "stream", "display_recipient": "84 BT Servant", "content": "hi"},
         ]
         result = cf.filter_messages(messages)
@@ -311,8 +319,16 @@ class TestFilterMessages:
             )
         )
         messages = [
-            {"type": "private", "display_recipient": [{"email": "a@b.com"}], "content": "dm"},
-            {"type": "stream", "display_recipient": "30 Infrastructure", "content": "ok"},
+            {
+                "type": "private",
+                "display_recipient": [{"email": "a@b.com"}],
+                "content": "dm",
+            },
+            {
+                "type": "stream",
+                "display_recipient": "30 Infrastructure",
+                "content": "ok",
+            },
         ]
         result = cf.filter_messages(messages)
         assert len(result) == 1
@@ -326,7 +342,11 @@ class TestFilterMessages:
             )
         )
         messages = [
-            {"type": "private", "display_recipient": [{"email": "a@b.com"}], "content": "dm"},
+            {
+                "type": "private",
+                "display_recipient": [{"email": "a@b.com"}],
+                "content": "dm",
+            },
         ]
         result = cf.filter_messages(messages)
         assert len(result) == 1
@@ -403,13 +423,15 @@ class TestStreamIdEnforcement:
             )
         )
         # Populate index as if get_streams returned these
-        cf.update_stream_index([
-            {"stream_id": 1, "name": "30 Infrastructure", "invite_only": False},
-            {"stream_id": 2, "name": "00.16 Prayer Requests", "invite_only": False},
-            {"stream_id": 3, "name": "09.40 - 2026 All Staff", "invite_only": True},
-            {"stream_id": 4, "name": "84 BT Servant", "invite_only": False},
-            {"stream_id": 5, "name": "Helpdesk - ST", "invite_only": False},
-        ])
+        cf.update_stream_index(
+            [
+                {"stream_id": 1, "name": "30 Infrastructure", "invite_only": False},
+                {"stream_id": 2, "name": "00.16 Prayer Requests", "invite_only": False},
+                {"stream_id": 3, "name": "09.40 - 2026 All Staff", "invite_only": True},
+                {"stream_id": 4, "name": "84 BT Servant", "invite_only": False},
+                {"stream_id": 5, "name": "Helpdesk - ST", "invite_only": False},
+            ]
+        )
         return cf
 
     def test_allowed_stream_by_id(self, filter_with_index):
@@ -417,7 +439,9 @@ class TestStreamIdEnforcement:
         assert filter_with_index.is_stream_id_allowed(4) is True  # 84 BT Servant
 
     def test_blocked_stream_by_id_name_filter(self, filter_with_index):
-        assert filter_with_index.is_stream_id_allowed(2) is False  # 00.16 Prayer Requests
+        assert (
+            filter_with_index.is_stream_id_allowed(2) is False
+        )  # 00.16 Prayer Requests
 
     def test_blocked_stream_by_id_private(self, filter_with_index):
         assert filter_with_index.is_stream_id_allowed(3) is False  # private channel
@@ -437,17 +461,21 @@ class TestStreamIdEnforcement:
                 deny_unknown_stream_ids=False,
             )
         )
-        cf.update_stream_index([
-            {"stream_id": 1, "name": "30 Infrastructure", "invite_only": False},
-        ])
+        cf.update_stream_index(
+            [
+                {"stream_id": 1, "name": "30 Infrastructure", "invite_only": False},
+            ]
+        )
         assert cf.is_stream_id_allowed(1) is True
         assert cf.is_stream_id_allowed(999) is True
 
     def test_index_update_idempotent(self, filter_with_index):
         # Updating index again should not break anything
-        filter_with_index.update_stream_index([
-            {"stream_id": 1, "name": "30 Infrastructure", "invite_only": False},
-        ])
+        filter_with_index.update_stream_index(
+            [
+                {"stream_id": 1, "name": "30 Infrastructure", "invite_only": False},
+            ]
+        )
         assert filter_with_index.is_stream_id_allowed(1) is True
 
 
@@ -465,10 +493,16 @@ class TestPrivacyAwareNameCheck:
                 exclude_private=True,
             )
         )
-        cf.update_stream_index([
-            {"stream_id": 10, "name": "09.40 - 2026 All Staff", "invite_only": True},
-            {"stream_id": 11, "name": "30 Infrastructure", "invite_only": False},
-        ])
+        cf.update_stream_index(
+            [
+                {
+                    "stream_id": 10,
+                    "name": "09.40 - 2026 All Staff",
+                    "invite_only": True,
+                },
+                {"stream_id": 11, "name": "30 Infrastructure", "invite_only": False},
+            ]
+        )
         # Name passes JD filter but is private — should be blocked
         assert cf.is_channel_allowed_with_privacy("09.40 - 2026 All Staff") is False
         assert cf.is_channel_allowed_with_privacy("30 Infrastructure") is True
@@ -526,10 +560,20 @@ class TestBlockedCounters:
             )
         )
         before = get_blocked_counts()["read"]
-        cf.filter_messages([
-            {"type": "private", "display_recipient": [{"email": "a@b.com"}], "content": "dm"},
-            {"type": "stream", "display_recipient": "01 Knowledge base", "content": "x"},
-        ])
+        cf.filter_messages(
+            [
+                {
+                    "type": "private",
+                    "display_recipient": [{"email": "a@b.com"}],
+                    "content": "dm",
+                },
+                {
+                    "type": "stream",
+                    "display_recipient": "01 Knowledge base",
+                    "content": "x",
+                },
+            ]
+        )
         after = get_blocked_counts()["read"]
         # Both DM and out-of-range stream should increment
         assert after > before

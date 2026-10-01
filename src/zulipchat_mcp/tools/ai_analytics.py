@@ -79,7 +79,7 @@ async def analyze_stream_with_llm(
             f"Stream: #{stream_name} ({len(messages)} messages, {time_period})\n\n"
         )
         for i, msg in enumerate(messages[:20]):  # Limit for tokens
-            data_summary += f"{i+1}. {msg['sender']}: {msg['content'][:150]}...\n"
+            data_summary += f"{i + 1}. {msg['sender']}: {msg['content'][:150]}...\n"
 
         # Create analysis prompt
         if custom_prompt:
@@ -235,7 +235,9 @@ async def intelligent_report_generator(
         if team_activity.get("status") != "success":
             return {
                 "status": "error",
-                "error": team_activity.get("error", "Failed to gather team activity data"),
+                "error": team_activity.get(
+                    "error", "Failed to gather team activity data"
+                ),
             }
 
         analysis = team_activity.get("analysis", "")

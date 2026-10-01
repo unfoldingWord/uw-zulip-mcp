@@ -35,7 +35,9 @@ class TestEventManagement:
     def mock_deps(self, mock_client):
         """Patch dependencies."""
         with (
-            patch("src.zulipchat_mcp.tools.event_management.get_client") as mock_get_client,
+            patch(
+                "src.zulipchat_mcp.tools.event_management.get_client"
+            ) as mock_get_client,
         ):
             mock_get_client.return_value = mock_client
             yield mock_client
@@ -112,7 +114,6 @@ class TestEventManagement:
             patch("asyncio.sleep", new_callable=AsyncMock),
             patch("httpx.AsyncClient") as mock_http,
         ):
-
             mock_post = AsyncMock()
             mock_http.return_value.__aenter__.return_value.post = mock_post
 

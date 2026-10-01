@@ -18,9 +18,12 @@ class TestAIAnalytics:
 
     @pytest.fixture
     def mock_deps(self):
-        with patch("src.zulipchat_mcp.tools.ai_analytics.get_client") as mock_get_client, \
-             patch("src.zulipchat_mcp.tools.search.search_messages", new_callable=AsyncMock) as mock_search:
-
+        with (
+            patch("src.zulipchat_mcp.tools.ai_analytics.get_client") as mock_get_client,
+            patch(
+                "src.zulipchat_mcp.tools.search.search_messages", new_callable=AsyncMock
+            ) as mock_search,
+        ):
             client = MagicMock()
             mock_get_client.return_value = client
             yield client, mock_search
@@ -49,21 +52,20 @@ class TestAIAnalytics:
         client, mock_search = mock_deps
         mock_search.return_value = {
             "status": "success",
-            "messages": [{"sender": "Alice", "content": "Hello"}]
+            "messages": [{"sender": "Alice", "content": "Hello"}],
         }
 
-        mock_ctx.sample.return_value = MagicMock(content=[TextContent(type="text", text="Analysis result")])
+        mock_ctx.sample.return_value = MagicMock(
+            content=[TextContent(type="text", text="Analysis result")]
+        )
 
         result = await analyze_stream_with_llm(
-            stream_name="general",
-            analysis_type="summary",
-            ctx=mock_ctx
+            stream_name="general", analysis_type="summary", ctx=mock_ctx
         )
 
         assert result["status"] == "success"
         assert result["analysis"] == "Analysis result"
         mock_ctx.sample.assert_called()
-
 
     @pytest.mark.asyncio
     async def test_analyze_stream_with_llm_search_failed(self, mock_deps, mock_ctx):
@@ -77,12 +79,14 @@ class TestAIAnalytics:
         assert "Failed to fetch stream data" in result["error"]
 
     @pytest.mark.asyncio
-    async def test_analyze_stream_with_llm_sampling_unsupported(self, mock_deps, mock_ctx):
+    async def test_analyze_stream_with_llm_sampling_unsupported(
+        self, mock_deps, mock_ctx
+    ):
         """Test analyze_stream_with_llm when sampling is unsupported (Bug Regression)."""
         _, mock_search = mock_deps
         mock_search.return_value = {
             "status": "success",
-            "messages": [{"sender": "Alice", "content": "Hello"}]
+            "messages": [{"sender": "Alice", "content": "Hello"}],
         }
 
         # Simulate sampling error (e.g. client doesn't support it)
@@ -100,20 +104,20 @@ class TestAIAnalytics:
         _, mock_search = mock_deps
         mock_search.return_value = {
             "status": "success",
-            "messages": [{"sender": "Alice", "content": "Work"}]
+            "messages": [{"sender": "Alice", "content": "Work"}],
         }
 
-        mock_ctx.sample.return_value = MagicMock(content=[TextContent(type="text", text="Team analysis")])
+        mock_ctx.sample.return_value = MagicMock(
+            content=[TextContent(type="text", text="Team analysis")]
+        )
 
         result = await analyze_team_activity_with_llm(
-            team_streams=["s1", "s2"],
-            analysis_focus="productivity",
-            ctx=mock_ctx
+            team_streams=["s1", "s2"], analysis_focus="productivity", ctx=mock_ctx
         )
 
         assert result["status"] == "success"
         assert result["analysis"] == "Team analysis"
-        assert result["total_messages"] == 2 # 1 per stream * 2 streams
+        assert result["total_messages"] == 2  # 1 per stream * 2 streams
 
     @pytest.mark.asyncio
     async def test_intelligent_report_generator(self, mock_deps, mock_ctx):
@@ -125,19 +129,17 @@ class TestAIAnalytics:
         _, mock_search = mock_deps
         mock_search.return_value = {
             "status": "success",
-            "messages": [{"sender": "Alice", "content": "Work"}]
+            "messages": [{"sender": "Alice", "content": "Work"}],
         }
 
         # sample called twice: once for analysis, once for report
         mock_ctx.sample.side_effect = [
             MagicMock(content=[TextContent(type="text", text="Analysis")]),
-            MagicMock(content=[TextContent(type="text", text="Final Report")])
+            MagicMock(content=[TextContent(type="text", text="Final Report")]),
         ]
 
         result = await intelligent_report_generator(
-            report_type="standup",
-            target_streams=["s1"],
-            ctx=mock_ctx
+            report_type="standup", target_streams=["s1"], ctx=mock_ctx
         )
 
         assert result["status"] == "success"

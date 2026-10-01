@@ -22,7 +22,9 @@ class TestReactions:
     def mock_deps(self, mock_client):
         """Patch dependencies."""
         with (
-            patch("src.zulipchat_mcp.tools.emoji_messaging.get_client") as mock_get_client,
+            patch(
+                "src.zulipchat_mcp.tools.emoji_messaging.get_client"
+            ) as mock_get_client,
         ):
             mock_get_client.return_value = mock_client
             yield mock_client

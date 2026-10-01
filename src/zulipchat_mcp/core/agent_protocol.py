@@ -118,7 +118,9 @@ def parse_control_message(content: str) -> ParsedControlMessage:
     )
 
 
-def format_session_message(category: str, content: str, request_id: str | None = None) -> str:
+def format_session_message(
+    category: str, content: str, request_id: str | None = None
+) -> str:
     """Format outbound session messages consistently."""
     clean_content = content.strip()
     if category in LIFECYCLE_EVENTS:

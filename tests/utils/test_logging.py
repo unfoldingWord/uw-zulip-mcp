@@ -25,7 +25,6 @@ class TestLogging:
             patch("logging.basicConfig") as mock_basic_config,
             patch("src.zulipchat_mcp.utils.logging.STRUCTLOG_AVAILABLE", True),
         ):
-
             logging_utils.setup_structured_logging("INFO")
             mock_configure.assert_called()
             mock_basic_config.assert_called()
@@ -36,7 +35,6 @@ class TestLogging:
             patch("src.zulipchat_mcp.utils.logging.STRUCTLOG_AVAILABLE", False),
             patch("src.zulipchat_mcp.utils.logging.setup_basic_logging") as mock_basic,
         ):
-
             logging_utils.setup_structured_logging("INFO")
             mock_basic.assert_called_with("INFO")
 

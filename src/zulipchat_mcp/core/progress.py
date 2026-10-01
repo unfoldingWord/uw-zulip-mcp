@@ -33,20 +33,20 @@ _GRADIENT = [
     (180, 215, 235),  # ice
     (150, 205, 230),  # light ice
     (120, 195, 235),  # light blue
-    (80, 175, 225),   # medium blue
-    (40, 165, 218),   # approaching cerulean
-    (0, 155, 210),    # cerulean
-    (0, 135, 190),    # deep cerulean
-    (0, 155, 210),    # cerulean (settle)
+    (80, 175, 225),  # medium blue
+    (40, 165, 218),  # approaching cerulean
+    (0, 155, 210),  # cerulean
+    (0, 135, 190),  # deep cerulean
+    (0, 155, 210),  # cerulean (settle)
 ]
 
 # Breathing pulse colors (indices into a small palette)
 _PULSE = [
-    (0, 155, 210),    # cerulean
-    (0, 135, 190),    # deep
-    (0, 155, 210),    # cerulean
+    (0, 155, 210),  # cerulean
+    (0, 135, 190),  # deep
+    (0, 155, 210),  # cerulean
     (120, 195, 235),  # light blue
-    (0, 155, 210),    # cerulean
+    (0, 155, 210),  # cerulean
 ]
 
 _HIDE_CURSOR = "\033[?25l"

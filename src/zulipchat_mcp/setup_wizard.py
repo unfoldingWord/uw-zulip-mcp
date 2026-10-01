@@ -538,7 +538,7 @@ def main(argv: list[str] | None = None) -> None:
         print(f"\n{BOLD}Codex configuration (config.toml){RESET}")
         args = ", ".join(f'"{arg}"' for arg in mcp_config["args"])
         print(
-            f"\n[mcp_servers.zulipchat]\ncommand = \"{mcp_config['command']}\"\nargs = [{args}]\n"
+            f'\n[mcp_servers.zulipchat]\ncommand = "{mcp_config["command"]}"\nargs = [{args}]\n'
         )
         if config_path:
             print(f"Suggested path: {config_path}")

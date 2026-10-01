@@ -416,7 +416,11 @@ async def resolve_user(name: str) -> dict[str, Any]:
     resolution = user_cache.resolve_user(name)
     if resolution.get("email"):
         return {"status": "success", **resolution}
-    return {"status": "not_found", "query": name, "suggestion": "Try full name or email"}
+    return {
+        "status": "not_found",
+        "query": name,
+        "suggestion": "Try full name or email",
+    }
 
 
 async def get_user(
@@ -426,9 +430,13 @@ async def get_user(
 ) -> dict[str, Any]:
     """Look up a user by ID or email."""
     if user_id is not None:
-        return await get_user_by_id(user_id, include_custom_profile_fields=include_custom_profile_fields)
+        return await get_user_by_id(
+            user_id, include_custom_profile_fields=include_custom_profile_fields
+        )
     elif email is not None:
-        return await get_user_by_email(email, include_custom_profile_fields=include_custom_profile_fields)
+        return await get_user_by_email(
+            email, include_custom_profile_fields=include_custom_profile_fields
+        )
     else:
         return {"status": "error", "error": "Provide user_id or email"}
 

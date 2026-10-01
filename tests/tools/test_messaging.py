@@ -35,9 +35,7 @@ class TestMessagingTools:
     @pytest.fixture
     def mock_deps(self, mock_client):
         """Patch get_client to return mock client."""
-        with patch(
-            "src.zulipchat_mcp.tools.messaging.get_client"
-        ) as mock_get_client:
+        with patch("src.zulipchat_mcp.tools.messaging.get_client") as mock_get_client:
             mock_get_client.return_value = mock_client
             yield mock_client
 
