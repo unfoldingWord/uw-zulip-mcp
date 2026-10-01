@@ -1,68 +1,121 @@
 # Repository Guidelines
 
+Single source of truth for working in this repository. `CLAUDE.md` is a link to
+this file, so guidance stays in one place for every assistant and contributor.
+
 ## Current Status (v0.7.1)
 
-**Published**: [PyPI](https://pypi.org/project/zulipchat-mcp/) | Install: `uvx zulipchat-mcp`
+**Published**: [PyPI](https://pypi.org/project/zulipchat-mcp/) | [TestPyPI](https://test.pypi.org/project/zulipchat-mcp/) | Install: `uvx zulipchat-mcp`
+
+ZulipChat MCP is a Model Context Protocol (MCP) server that connects AI
+assistants to Zulip. It uses the FastMCP framework with DuckDB for persistence
+and an async-first architecture.
 
 ## Project Structure & Module Organization
 - Source code lives in `src/zulipchat_mcp/`:
-  - `tools/` (tool groups), `core/` (client, cache, commands), `services/` (listener, scheduler), `integrations/` (client installers), `utils/` (logging, metrics, db).
+  - `tools/` (tool groups), `core/` (client, cache, commands, identity), `services/` (listener, scheduler), `integrations/` (client installers), `utils/` (logging, metrics, db), `config.py` (configuration), `server.py` (entry point and CLI).
 - Tests are in `tests/` (pytest with `slow` and `integration` markers).
 - Config via CLI flags or environment; copy `.env.example` to `.env` for local dev. Entry points: `zulipchat-mcp`, `zulipchat-mcp-integrate`.
 
+### Dual identity
+The client (`core/client.py`) supports both user and bot credentials:
+- User identity for reading/search operations.
+- Bot identity for posting messages and administrative tasks.
+- Switch via the `switch_identity` tool.
+
+### Imports
+Production code under `src/zulipchat_mcp/` uses package-relative imports:
+```python
+from .core.client import ZulipClientWrapper
+from .tools.messaging import register_messaging_tools
+```
+Tests use `from src.zulipchat_mcp.*` because pytest runs with the repo root on `sys.path`. Never write `from src.zulipchat_mcp.*` inside `src/`.
+
 ## Build, Test, and Development Commands
-- `uv sync` — install dependencies.
-- `uv run zulipchat-mcp --zulip-config-file ~/.zuliprc [--enable-listener]` — run server locally.
-- `uvx zulipchat-mcp` — quick run via uvx shim.
-- `uv run pytest -q` — run tests. Use `-m "not slow and not integration"` to skip long tests; `--cov=src` for coverage. Gate is set to 60%.
-- `uv run ruff check .` — lint; use Black on changed Python files; `uv run mypy src` — type-check.
+- `uv sync` — install dependencies. Never use pip; add packages with `uv add <package>`.
+- `uv run zulipchat-mcp --zulip-config-file ~/.zuliprc [--enable-listener]` — run the server locally.
+- `uvx zulipchat-mcp` — quick run via the uvx shim.
+- `uv run pytest -q` — run tests. Use `-m "not slow and not integration"` to skip long tests; `--cov=src` for coverage. Gate is 60%.
+- `uv run ruff check .` — lint; run Black on changed Python files; `uv run mypy src` — type-check.
+- Optional security checks: `uv run bandit -q -r src` and `uv run safety check`.
+- Quick connection check:
+  ```bash
+  uv run python -c "from zulipchat_mcp.config import ConfigManager; from zulipchat_mcp.core.client import ZulipClientWrapper; c = ZulipClientWrapper(ConfigManager()); print('Connected:', c.identity_name)"
+  ```
+- Import validation: `uv run python -c "from zulipchat_mcp.server import main; print('OK')"`
 
 ## Coding Style & Naming Conventions
-- Python 3.10+, 4‑space indent, Black line length 88, Ruff configured (pycodestyle, pyflakes, isort, bugbear, pyupgrade). Keep imports sorted.
+- Python 3.10+, 4-space indent, Black line length 88, Ruff (pycodestyle, pyflakes, isort, bugbear, pyupgrade). Keep imports sorted.
 - Names: functions/variables `snake_case`, classes `CamelCase`, constants `UPPER_SNAKE_CASE`, modules `lower_snake_case.py`.
-- Tool groups should expose `register_*_tools(mcp)` mirroring patterns in `src/zulipchat_mcp/tools/`.
+- Type hints required for public APIs; prefer async/await for I/O.
+- **Less is more.** Elegant simplicity is the primary metric: every line must justify its existence, prefer Zulip's native capabilities over custom code, remove complexity rather than manage it, and minimize abstractions.
+- File operations: prefer editing existing files over creating new ones, consider deletion before addition, read a file before modifying it, and match existing patterns.
+
+## Tool Registration & Modes
+Register tools through `tools/registration.py`, not bare `@mcp.tool`:
+```python
+from .registration import register_tool, optional_background_task
+
+register_tool(
+    mcp,
+    my_tool_fn,
+    name="my_tool",
+    description="One-line, action-oriented.",
+    task=optional_background_task(),  # only for long-running tools
+)
+```
+Server-wide task advertisement is intentionally disabled in `server.py` (commit `70d3779`). Pass `task=optional_background_task()` only for genuinely long-running tools (`teleport_chat`, `wait_for_response`, `listen_events`); normal fast tools omit `task=`. Each tool group exposes `register_*_tools(mcp)`.
+
+Tool modes:
+- **Default**: 20 core tools via `register_core_tools(mcp)` (9 in read-only).
+- **Extended (56 tools total)**: `--extended-tools` flag or `ZULIPCHAT_EXTENDED_TOOLS=true` also calls `register_extended_tools(mcp)`. The split keeps token overhead low for the common case.
 
 ## Testing Guidelines
 - Place tests under `tests/` as `test_*.py`; classes `Test*`, functions `test_*`.
-- Mark long/external tests with `@pytest.mark.slow` or `@pytest.mark.integration` and gate in CI via markers.
-- Prefer fast, deterministic unit tests; mock Zulip API calls. Aim for meaningful coverage with `pytest --cov=src`.
-- Testing strategy: always use `uv` (no direct Python invocations), keep tests isolated and network-free by mocking clients, aggressively clean caches/venv before major coverage pushes (`rm -rf .venv .pytest_cache **/__pycache__ htmlcov .coverage* coverage.xml .uv_cache && uv sync --reinstall`), and maintain the coverage gate at 60% while adding minimal, targeted tests without altering functionality.
-
-- Note on contract-only runs: Running only the tests matching `-k "contract_"` will likely trip the global coverage gate; use the full suite for verification, or append `--no-cov` when exploring locally (e.g., `uv run pytest -q -k "contract_" --no-cov`).
+- Mark long/external tests `@pytest.mark.slow` or `@pytest.mark.integration` and gate them in CI via markers.
+- Prefer fast, deterministic unit tests; mock Zulip API calls so tests are network-free. Maintain the 60% coverage gate with targeted tests that do not alter functionality.
+- Always use `uv` (no direct Python). Before major coverage pushes, clean caches: `rm -rf .venv .pytest_cache **/__pycache__ htmlcov .coverage* coverage.xml .uv_cache && uv sync --reinstall`.
+- Contract-only runs (`-k "contract_"`) trip the global coverage gate; use the full suite, or append `--no-cov` when exploring locally.
 
 ## MCP Sampling & LLM Analytics (v0.4+)
 
-### Context Parameter Requirements
-All LLM-powered analytics tools in v0.4 use MCP Sampling via `Context` injection:
-
-**CORRECT** (Required parameter):
+### Context parameter (required, not optional)
+LLM-powered tools require the FastMCP-injected `Context`. Do not make it optional.
 ```python
 async def analyze_stream_with_llm(stream_name: str, ctx: Context) -> dict:
     result = await ctx.sample(f"Analyze stream {stream_name}")
 ```
+`ctx: Context | None = None` with a null guard defeats sampling. The client controls model selection and permissions. If you see "Client does not support sampling", ensure `ctx` is required (no `| None`), remove null guards, and confirm the client (Claude Code, Gemini) has sampling enabled.
 
-**INCORRECT** (Optional parameter breaks sampling):
+### Bidirectional agent communication (v0.4+)
+Agent-to-user pipeline in `src/zulipchat_mcp/tools/agents.py`:
+- `register_agent()`, `ensure_agent_session()`, `agent_message()`, `request_user_input()`, `wait_for_response()`, `poll_agent_events()`.
+- A background MessageListener processes Zulip replies; `zulipchat-mcp-hook` bridges Claude Code hook events into the same session model.
+
+### Emoji registry (v0.4+)
+`core/emoji_registry.py` enforces 12 approved emoji for agent reactions: `thumbs_up`, `heart`, `rocket`, `fire`, `tada`, `check_mark`, `warning`, `thinking`, `bulb`, `wrench`, `star`, `zap`. Others are rejected at runtime; validate with `validate_emoji_for_agent()`.
+
+### Command chains (execute_chain)
+Workflow automation with context passed between operations:
 ```python
-async def analyze_stream_with_llm(stream_name: str, ctx: Context | None = None) -> dict:
-    if not ctx: return {...}  # This defeats sampling!
+execute_chain([
+    {"type": "search_messages", "params": {"query_key": "search_query"}},
+    {"type": "conditional_action", "params": {
+        "condition": "len(context['search_results']) > 0",
+        "true_action": {"type": "send_message", "params": {...}},
+    }},
+])
 ```
 
-### Bidirectional Agent Communication (v0.4+)
-Full agent-to-user messaging pipeline available in `src/zulipchat_mcp/tools/agents.py`:
-- `register_agent()` - Register a stable agent profile
-- `ensure_agent_session()` - Bind a Zulip topic to a live agent session
-- `agent_message()` - Send session-scoped messages or lifecycle updates
-- `request_user_input()` - Persist in-topic questions or approvals
-- `wait_for_response()` - Synchronous polling for persisted responses
-- `poll_agent_events()` - Read owner steering/command events from the session topic
-- `zulipchat-mcp-hook` - Bridge Claude Code hook events into the same session model
+## Project Skills (`.claude/skills/`)
+Three project skills extend the Zulip control plane. They activate when a Claude
+Code session is bound to a Zulip topic via `zulipchat-mcp-hook` and read
+`ZULIPCHAT_SESSION_ID`, `ZULIPCHAT_SESSION_STREAM`, `ZULIPCHAT_SESSION_TOPIC`:
+- **`zulipchat-session-operator`** — treats Zulip as the owner control plane; polls `poll_agent_events`, handles `/status`, `/pause`, `/resume`, `/cancel`, `/handoff`; lifecycle-only posting.
+- **`zulipchat-loop`** — per-cycle policy for `/loop`: poll events, apply steering, emit at most one lifecycle message, do one unit of work.
+- **`zulipchat-notifyme`** — explicit post into the bound topic with a category (`message`/`started`/`blocked`/`waiting`/`completed`/`failed`).
 
-### Emoji Registry (v0.4+)
-New `src/zulipchat_mcp/core/emoji_registry.py` enforces approved emoji for agent reactions:
-- 12 approved emoji: `thumbs_up`, `heart`, `rocket`, `fire`, `tada`, `check_mark`, `warning`, `thinking`, `bulb`, `wrench`, `star`, `zap`
-- All others rejected at runtime with helpful error messages
-- Use `validate_emoji_for_agent()` to validate before sending reactions
-
+If a session is not bound, these skills stop and explain rather than calling MCP tools blind.
 
 ## Commit & Pull Request Guidelines
 - Use Conventional Commits: `feat:`, `fix:`, `docs:`, `chore:`, `release:` (see `git log`).
@@ -71,22 +124,27 @@ New `src/zulipchat_mcp/core/emoji_registry.py` enforces approved emoji for agent
 - Community PRs are labeled `community`. Prefer merging over reimplementing.
 
 ## Distribution & Installation Testing
-- **Installation Methods**: Three primary distribution channels:
-  - `uvx zulipchat-mcp` (PyPI - fastest, pre-built wheels)
-  - `uvx --from git+https://github.com/akougkas/zulipchat-mcp.git zulipchat-mcp` (GitHub - builds from source)
-  - `uvx --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ zulipchat-mcp` (TestPyPI - for pre-release testing)
-- **Credential Loading**: Supports both zuliprc files and env vars. For config-file paths, environment variables (`ZULIP_CONFIG_FILE`, `ZULIP_BOT_CONFIG_FILE`) are checked before CLI flags; Zulip credentials can be loaded from either zuliprc or env.
-- **Claude Code Integration**: Use `--` separator for proper argument passing:
+- **Installation Methods**: three distribution channels:
+  - `uvx zulipchat-mcp` (PyPI — fastest, pre-built wheels)
+  - `uvx --from git+https://github.com/akougkas/zulipchat-mcp.git zulipchat-mcp` (GitHub — builds from source)
+  - `uvx --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ zulipchat-mcp` (TestPyPI — pre-release testing)
+- **Credential loading**: zuliprc files or env vars; config-file env vars (`ZULIP_CONFIG_FILE`, `ZULIP_BOT_CONFIG_FILE`) are checked before CLI flags.
+- **Claude Code integration**: use the `--` separator (env vars before `--`):
   ```bash
-  # Correct syntax (tested)
   claude mcp add zulipchat -e ZULIP_EMAIL=bot@org.com -e ZULIP_API_KEY=key -e ZULIP_SITE=https://org.zulipchat.com -- uvx --from git+https://github.com/akougkas/zulipchat-mcp.git zulipchat-mcp
   ```
-- **Testing Before Release**: Always run the fake-credential MCP stdio smoke from both the project environment and the built wheel. Use real Zulip credentials only for targeted manual checks of behavior that actually requires Zulip API access.
+- **Before release**: run the fake-credential MCP stdio smoke from both the project environment and the built wheel. Use real Zulip credentials only for targeted manual checks that actually require API access.
 
 ## Security & Configuration Tips
-- Do not commit secrets. Use `.env` (gitignored). Common vars: `ZULIP_EMAIL`, `ZULIP_API_KEY`, `ZULIP_SITE`.
-- Prefer CLI flags for credentials in MCP clients. Message listener startup is lazy by default; `--enable-listener` starts it eagerly for backward compatibility.
+- Do not commit secrets. Use `.env` (gitignored). Common vars: `ZULIP_EMAIL`, `ZULIP_API_KEY`, `ZULIP_SITE` (plus optional `ZULIP_BOT_EMAIL`, `ZULIP_BOT_API_KEY`).
+- Prefer CLI flags for credentials in MCP clients. Administrative/destructive tools are not exposed to AI clients by default.
+- Message listener startup is lazy; `--enable-listener` starts it eagerly for backward compatibility.
 - Optional checks before release: `uv run bandit -q -r src` and `uv run safety check`.
+
+## Common Issues
+- **DuckDB lock after unclean shutdown**: stale-lock recovery shipped in commit `3db725a`. If you still hit "Database is locked by another process", ensure no zombie `zulipchat-mcp` process holds `.mcp/zulipchat/zulipchat.duckdb`.
+- **Coverage / cache contamination**: clean caches (see Testing Guidelines) before major test runs.
+- **LLM analytics "not supported"**: see the Context parameter note under MCP Sampling.
 
 ## Documentation Resources
 
@@ -138,11 +196,15 @@ gh release create vX.Y.Z --title "vX.Y.Z - Title" --generate-notes --latest
 
 Publishing a GitHub release auto-triggers `.github/workflows/publish.yml` which builds and uploads to PyPI via trusted publisher (OIDC). Never leave releases as drafts.
 
-After publishing: comment on fixed issues with version number, credit reporters, invite them to try the update.
+Release invariants:
+- The tag must match `pyproject.toml` exactly (`vX.Y.Z` ↔ `version = "X.Y.Z"`).
+- The version must be in sync across `pyproject.toml`, `src/zulipchat_mcp/__init__.py`, `src/zulipchat_mcp/tools/system.py`, `server.json`, and release docs; `release_preflight.py` verifies this.
+- `scripts/pre_release_smoke.sh` is a blocking gate: it installs the built wheel and starts the stdio server with fake credentials, catching startup-only failures that `--version` cannot.
+- After publishing, comment on fixed issues with the version number, credit reporters, and invite them to upgrade.
 
 ## Open Source Community Practices
 
 - **Respond to issues and PRs within 48 hours.** Even "Looking into this" is enough.
 - **Label on triage**: `bug`, `enhancement`, `good first issue`, `help wanted`, `community`, `needs-triage`, `dependencies`, `fastmcp`, `mcp-tools`, `breaking-change`.
 - **Prefer merging community PRs** over reimplementing the same fix. If already fixed independently, close with explicit credit.
-- **After each release**, notify reporters on fixed issues with version and upgrade instructions.
+- **After each release**, notify reporters on fixed issues with the version and upgrade instructions.
