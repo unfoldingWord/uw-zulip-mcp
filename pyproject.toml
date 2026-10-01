@@ -59,7 +59,6 @@ dev = [
     "pytest-benchmark>=4.0.0",
     "pytest-mock>=3.12.0",
     "pytest-xdist>=3.5.0",
-    "black>=24.0",
     "ruff>=0.8.0",
     "mypy>=1.13",
     "bandit>=1.8",
@@ -94,24 +93,7 @@ managed = true
 [tool.uv.sources]
 
 # Tool configurations
-[tool.black]
-line-length = 88
-target-version = ['py310']
-include = '\.pyi?$'
-extend-exclude = '''
-/(
-  # directories
-  \.eggs
-  | \.git
-  | \.hg
-  | \.mypy_cache
-  | \.tox
-  | \.venv
-  | build
-  | dist
-)/
-'''
-
+# Ruff handles both linting (`ruff check`) and formatting (`ruff format`).
 [tool.ruff]
 target-version = "py310"
 line-length = 88
@@ -127,7 +109,7 @@ select = [
     "UP", # pyupgrade
 ]
 ignore = [
-    "E501",  # line too long, handled by black
+    "E501",  # line too long, handled by the formatter
     "B008",  # do not perform function calls in argument defaults
     "C901",  # too complex
 ]

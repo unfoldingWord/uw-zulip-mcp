@@ -96,8 +96,7 @@ uv sync
 uv run pytest -q
 uv run mypy src
 uv run ruff check .
-changed_py=$(git diff --name-only -- '*.py')
-[ -z "$changed_py" ] || uv run black --check $changed_py
+uv run ruff format --check .
 ```
 
 The full pytest command is the release gate because it enforces coverage. Use

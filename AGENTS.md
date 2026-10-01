@@ -36,7 +36,7 @@ Tests use `from src.zulipchat_mcp.*` because pytest runs with the repo root on `
 - `uv run zulipchat-mcp --zulip-config-file ~/.zuliprc [--enable-listener]` — run the server locally.
 - `uvx zulipchat-mcp` — quick run via the uvx shim.
 - `uv run pytest -q` — run tests. Use `-m "not slow and not integration"` to skip long tests; `--cov=src` for coverage. Gate is 60%.
-- `uv run ruff check .` — lint; run Black on changed Python files; `uv run mypy src` — type-check.
+- `uv run ruff format` — format; `uv run ruff check .` — lint; `uv run mypy src` — type-check.
 - Optional security checks: `uv run bandit -q -r src` and `uv run safety check`.
 - Quick connection check:
   ```bash
@@ -45,7 +45,7 @@ Tests use `from src.zulipchat_mcp.*` because pytest runs with the repo root on `
 - Import validation: `uv run python -c "from zulipchat_mcp.server import main; print('OK')"`
 
 ## Coding Style & Naming Conventions
-- Python 3.10+, 4-space indent, Black line length 88, Ruff (pycodestyle, pyflakes, isort, bugbear, pyupgrade). Keep imports sorted.
+- Python 3.10+, 4-space indent, line length 88. Ruff handles both formatting (`ruff format`) and linting (`ruff check`: pycodestyle, pyflakes, isort, bugbear, pyupgrade). Keep imports sorted.
 - Names: functions/variables `snake_case`, classes `CamelCase`, constants `UPPER_SNAKE_CASE`, modules `lower_snake_case.py`.
 - Type hints required for public APIs; prefer async/await for I/O.
 - **Less is more.** Elegant simplicity is the primary metric: every line must justify its existence, prefer Zulip's native capabilities over custom code, remove complexity rather than manage it, and minimize abstractions.
@@ -98,13 +98,18 @@ Agent-to-user pipeline in `src/zulipchat_mcp/tools/agents.py`:
 ### Command chains (execute_chain)
 Workflow automation with context passed between operations:
 ```python
-execute_chain([
-    {"type": "search_messages", "params": {"query_key": "search_query"}},
-    {"type": "conditional_action", "params": {
-        "condition": "len(context['search_results']) > 0",
-        "true_action": {"type": "send_message", "params": {...}},
-    }},
-])
+execute_chain(
+    [
+        {"type": "search_messages", "params": {"query_key": "search_query"}},
+        {
+            "type": "conditional_action",
+            "params": {
+                "condition": "len(context['search_results']) > 0",
+                "true_action": {"type": "send_message", "params": {...}},
+            },
+        },
+    ]
+)
 ```
 
 ## Project Skills (`.claude/skills/`)
@@ -181,9 +186,7 @@ Full checklist: [RELEASING.md](RELEASING.md)
 uv run python scripts/bump_version.py X.Y.Z   # Bump scripted version locations
 # Update CHANGELOG.md manually
 uv sync
-uv run pytest -q && uv run mypy src && uv run ruff check .
-changed_py=$(git diff --name-only -- '*.py')
-[ -z "$changed_py" ] || uv run black --check $changed_py
+uv run pytest -q && uv run mypy src && uv run ruff check . && uv run ruff format --check .
 uv build
 scripts/pre_release_smoke.sh --version X.Y.Z --allow-dirty
 uv run python scripts/release_preflight.py --version X.Y.Z --allow-dirty

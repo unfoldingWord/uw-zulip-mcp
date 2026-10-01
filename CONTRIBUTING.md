@@ -23,8 +23,7 @@ Run before opening a PR:
 ```bash
 uv run pytest -q
 uv run ruff check .
-changed_py=$(git diff --name-only -- '*.py')
-[ -z "$changed_py" ] || uv run black --check $changed_py
+uv run ruff format --check .
 uv run mypy src
 ```
 

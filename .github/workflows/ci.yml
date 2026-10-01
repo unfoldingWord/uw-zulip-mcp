@@ -165,6 +165,9 @@ jobs:
       - name: Lint with ruff
         run: uv run ruff check .
 
+      - name: Format check with ruff
+        run: uv run ruff format --check .
+
       - name: Type check with mypy
         run: uv run mypy src
 
