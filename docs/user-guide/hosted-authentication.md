@@ -98,12 +98,55 @@ the server logs the claims it did receive. For `jwt` mode, ensure your IdP puts
 | `OPENBAO_KV_PATH` | `zulip-mcp/users` | Base path for user secrets |
 | `OPENBAO_NAMESPACE` | — | Optional namespace |
 | `OPENBAO_TLS_VERIFY` | `1` | Set `0` to disable TLS verification (dev only) |
+| `OPENBAO_CACERT` | — | Path (inside the container) to a PEM CA bundle, for a private/internal CA |
 
 Each user's key is stored at `<mount>/data/<path>/<sha256(email)>`. The hash
 keeps the path clean and avoids listing everyone's email; operators can still
 map an email to its path by hashing the address the same way.
 
 The AppRole policy only needs create/read/update on that path prefix.
+
+### Private / internal CA
+
+If OpenBao presents a certificate signed by your own CA, the server must trust
+that CA or TLS verification fails with
+`CERTIFICATE_VERIFY_FAILED ... unable to get local issuer certificate`. Do not
+disable verification. Instead, give the server the CA bundle and mount it into
+the container, then point `OPENBAO_CACERT` at it.
+
+Docker run:
+
+```bash
+docker run ... \
+  -v /host/path/your-ca.pem:/etc/zulip-mcp/openbao-ca.pem:ro \
+  -e OPENBAO_CACERT=/etc/zulip-mcp/openbao-ca.pem \
+  ...
+```
+
+docker-compose:
+
+```yaml
+services:
+  zulip-mcp:
+    environment:
+      OPENBAO_CACERT: /etc/zulip-mcp/openbao-ca.pem
+    volumes:
+      - ./your-ca.pem:/etc/zulip-mcp/openbao-ca.pem:ro
+```
+
+Notes:
+- The PEM must contain the **root CA and any intermediate CAs**. Do not include
+  OpenBao's own leaf certificate — OpenBao presents that during the TLS
+  handshake.
+- This file is the **sole trust anchor** for the OpenBao connection: it
+  replaces the default/public CA store, it is not added to it. To trust a
+  private CA and public CAs on the same connection, concatenate your CA with
+  the public bundle into one PEM and point `OPENBAO_CACERT` at it.
+- Mount it read-only; it must be readable by the container's non-root user
+  (a CA certificate is public, so world-readable is fine).
+- Only the OpenBao client uses this CA. Zulip validation still uses the default
+  public trust store, so a Zulip Cloud site keeps working unchanged.
+
 
 ## Enrollment and cool-off
 

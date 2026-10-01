@@ -92,6 +92,17 @@ def openbao_tls_verify() -> bool:
     return _bool_env("OPENBAO_TLS_VERIFY", True)
 
 
+def openbao_cacert() -> str | None:
+    """Path to a PEM CA bundle used to verify OpenBao's TLS certificate.
+
+    Set this when OpenBao uses a certificate signed by a private/internal CA.
+    The file must contain the root CA and any intermediate CAs. It must not
+    contain OpenBao's own leaf certificate, which OpenBao presents during the
+    TLS handshake. Ignored when OPENBAO_TLS_VERIFY is disabled.
+    """
+    return os.getenv("OPENBAO_CACERT", "").strip() or None
+
+
 def vault_enabled() -> bool:
     """True when OpenBao credentials are configured (AppRole or direct token)."""
     if openbao_token():

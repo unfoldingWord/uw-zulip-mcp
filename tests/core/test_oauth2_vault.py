@@ -456,3 +456,23 @@ def test_auth_scopes_env_override(monkeypatch):
 
     monkeypatch.setenv("ZULIPCHAT_AUTH_SCOPES", "openid, email , profile extra")
     assert auth_provider._scopes(["openid"]) == ["openid", "email", "profile", "extra"]
+
+
+# --- OpenBao TLS verification ---------------------------------------------
+
+
+def test_secretstore_verify_uses_cacert_path():
+    store = SecretStore(addr="https://bao", token="t", cacert="/certs/ca.pem")
+    assert store._verify() == "/certs/ca.pem"
+
+
+def test_secretstore_verify_default_true():
+    store = SecretStore(addr="https://bao", token="t")
+    assert store._verify() is True
+
+
+def test_secretstore_verify_disabled_overrides_cacert():
+    store = SecretStore(
+        addr="https://bao", token="t", cacert="/certs/ca.pem", verify_tls=False
+    )
+    assert store._verify() is False

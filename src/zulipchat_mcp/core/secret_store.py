@@ -52,6 +52,7 @@ class SecretStore:
         kv_mount: str | None = None,
         kv_path: str | None = None,
         verify_tls: bool | None = None,
+        cacert: str | None = None,
     ) -> None:
         self._addr = (addr or hosted_config.openbao_addr()).rstrip("/")
         self._namespace = (
@@ -71,6 +72,7 @@ class SecretStore:
         self._verify_tls = (
             verify_tls if verify_tls is not None else hosted_config.openbao_tls_verify()
         )
+        self._cacert = cacert if cacert is not None else hosted_config.openbao_cacert()
 
         self._client: httpx.AsyncClient | None = None
         self._token: str | None = None
@@ -78,6 +80,18 @@ class SecretStore:
         self._auth_lock = asyncio.Lock()
 
     # -- internals ----------------------------------------------------------
+
+    def _verify(self) -> bool | str:
+        """httpx ``verify`` value: a CA bundle path, or a bool.
+
+        A private-CA PEM path takes precedence when TLS verification is on;
+        disabling verification (dev only) wins over everything.
+        """
+        if not self._verify_tls:
+            return False
+        if self._cacert:
+            return self._cacert
+        return True
 
     def _http(self) -> httpx.AsyncClient:
         if self._client is None:
@@ -87,7 +101,7 @@ class SecretStore:
             self._client = httpx.AsyncClient(
                 base_url=self._addr,
                 headers=headers,
-                verify=self._verify_tls,
+                verify=self._verify(),
                 timeout=10.0,
             )
         return self._client

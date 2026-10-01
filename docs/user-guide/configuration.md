@@ -133,6 +133,7 @@ Full guide: [Hosted Mode & Authentication](hosted-authentication.md).
 | `OPENBAO_KV_PATH` | `zulip-mcp/users` | Base path for user secrets |
 | `OPENBAO_NAMESPACE` | — | Optional namespace header |
 | `OPENBAO_TLS_VERIFY` | `true` | Set `0` to disable TLS verification (dev only) |
+| `OPENBAO_CACERT` | — | Path to a PEM containing the root CA and any intermediate CAs (not OpenBao's leaf cert). Use when OpenBao uses a private/internal CA |
 
 #### Enrollment & key cache
 
