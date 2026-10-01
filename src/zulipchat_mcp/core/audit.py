@@ -20,6 +20,8 @@ import os
 import time
 from typing import Any
 
+from ..utils.env import env_bool
+
 # Dedicated audit logger — separate from application logs so operators
 # can route it independently (e.g., to a file, syslog, or SIEM)
 audit_logger = logging.getLogger("zulipchat_mcp.audit")
@@ -41,8 +43,7 @@ def init_audit_logging() -> None:
     """
     global _AUDIT_ENABLED, _AUDIT_INITIALIZED
 
-    enabled = os.getenv("ZULIPCHAT_AUDIT_ENABLED", "").lower()
-    _AUDIT_ENABLED = enabled in ("true", "1", "yes", "on")
+    _AUDIT_ENABLED = env_bool("ZULIPCHAT_AUDIT_ENABLED")
 
     if not _AUDIT_ENABLED:
         return

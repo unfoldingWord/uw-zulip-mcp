@@ -31,6 +31,7 @@ from __future__ import annotations
 import os
 import secrets
 
+from ..utils.env import env_bool
 from ..utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -46,13 +47,6 @@ def _int_env(name: str, default: int) -> int:
         logger.warning("Invalid %s=%r; using default %d", name, raw, default)
         return default
     return value if value > 0 else default
-
-
-def _bool_env(name: str, default: bool) -> bool:
-    raw = os.getenv(name, "").strip().lower()
-    if not raw:
-        return default
-    return raw in ("1", "true", "yes", "on")
 
 
 # --- OpenBao / Vault -------------------------------------------------------
@@ -89,7 +83,7 @@ def openbao_kv_path() -> str:
 
 
 def openbao_tls_verify() -> bool:
-    return _bool_env("OPENBAO_TLS_VERIFY", True)
+    return env_bool("OPENBAO_TLS_VERIFY", True)
 
 
 def openbao_cacert() -> str | None:
@@ -110,7 +104,7 @@ def openbao_startup_required() -> bool:
     booting. Enable in strict environments where a broken vault must fail the
     deploy.
     """
-    return _bool_env("OPENBAO_STARTUP_REQUIRED", False)
+    return env_bool("OPENBAO_STARTUP_REQUIRED", False)
 
 
 def vault_enabled() -> bool:

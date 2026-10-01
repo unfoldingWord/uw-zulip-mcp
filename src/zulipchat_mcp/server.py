@@ -43,6 +43,7 @@ try:
 except ImportError:
     database_available = False
 
+from .utils.env import env_bool
 from .utils.logging import get_logger, setup_structured_logging
 
 
@@ -164,11 +165,7 @@ def main() -> None:
     )
 
     # Hosted multi-user mode: per-request client credentials, none at rest
-    hosted = args.hosted or os.getenv("ZULIPCHAT_HOSTED", "0") in (
-        "1",
-        "true",
-        "True",
-    )
+    hosted = args.hosted or env_bool("ZULIPCHAT_HOSTED")
     set_hosted_mode(hosted)
 
     # Validate configuration
@@ -341,19 +338,9 @@ def main() -> None:
     logger.info("FastMCP initialized successfully")
 
     # Determine tool modes
-    extended = args.extended_tools or os.getenv("ZULIPCHAT_EXTENDED_TOOLS", "0") in (
-        "1",
-        "true",
-        "True",
-    )
-    read_only = args.read_only or os.getenv("ZULIPCHAT_READ_ONLY", "0") in (
-        "1",
-        "true",
-        "True",
-    )
-    disable_agents = args.disable_agents or os.getenv(
-        "ZULIPCHAT_DISABLE_AGENTS", "0"
-    ) in ("1", "true", "True")
+    extended = args.extended_tools or env_bool("ZULIPCHAT_EXTENDED_TOOLS")
+    read_only = args.read_only or env_bool("ZULIPCHAT_READ_ONLY")
+    disable_agents = args.disable_agents or env_bool("ZULIPCHAT_DISABLE_AGENTS")
 
     if read_only:
         logger.info("READ-ONLY MODE - write tools will not be registered")
@@ -383,7 +370,7 @@ def main() -> None:
             logger.debug(f"Cache warmup skipped: {e}")
 
     # Privacy notice on stderr (visible to operator, not to MCP client)
-    quiet = os.getenv("ZULIPCHAT_QUIET", "0") in ("1", "true", "True")
+    quiet = env_bool("ZULIPCHAT_QUIET")
     if not quiet:
         import sys
 

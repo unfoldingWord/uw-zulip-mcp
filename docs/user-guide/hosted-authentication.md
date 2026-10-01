@@ -53,7 +53,7 @@ fork's channel filter, which still applies globally).
 
 ```bash
 ZULIP_SITE=https://your-org.zulipchat.com \
-ZULIPCHAT_HOSTED=1 \
+ZULIPCHAT_HOSTED=true \
 ZULIPCHAT_AUTH_MODE=google \
 ZULIPCHAT_AUTH_CLIENT_ID=... ZULIPCHAT_AUTH_CLIENT_SECRET=... \
 ZULIPCHAT_AUTH_BASE_URL=https://mcp.your-org.example \

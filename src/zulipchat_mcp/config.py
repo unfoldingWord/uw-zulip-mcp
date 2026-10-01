@@ -117,8 +117,9 @@ class ConfigManager:
 
     def _get_debug(self) -> bool:
         """Get debug mode setting."""
-        debug_str = os.getenv("MCP_DEBUG", "false").lower()
-        return debug_str in ("true", "1", "yes", "on")
+        from .utils.env import env_bool
+
+        return env_bool("MCP_DEBUG")
 
     def _get_port(self) -> int:
         """Get MCP server port."""

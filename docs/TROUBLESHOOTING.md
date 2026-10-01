@@ -27,7 +27,7 @@ uvx --from zulipchat-mcp zulipchat-mcp-setup
 ## Tool not found in client
 
 - You are likely in core mode.
-- Start with `--extended-tools` (or `ZULIPCHAT_EXTENDED_TOOLS=1`) for full tool set.
+- Start with `--extended-tools` (or `ZULIPCHAT_EXTENDED_TOOLS=true`) for full tool set.
 
 ## `request_user_input` or approvals never resolve
 
