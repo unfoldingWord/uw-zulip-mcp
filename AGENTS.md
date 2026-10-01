@@ -5,7 +5,7 @@ this file, so guidance stays in one place for every assistant and contributor.
 
 ## Current Status (v0.7.1)
 
-**Published**: [PyPI](https://pypi.org/project/zulipchat-mcp/) | [TestPyPI](https://test.pypi.org/project/zulipchat-mcp/) | Install: `uvx zulipchat-mcp`
+**Distribution**: Docker image `unfoldingword/zulipchat-mcp` on Docker Hub (`latest` = develop, `stable` = latest release). Local/dev run from source: `uvx --from git+https://github.com/akougkas/zulipchat-mcp.git zulipchat-mcp`. This fork does not publish to PyPI.
 
 ZulipChat MCP is a Model Context Protocol (MCP) server that connects AI
 assistants to Zulip. It uses the FastMCP framework with DuckDB for persistence
@@ -129,16 +129,14 @@ If a session is not bound, these skills stop and explain rather than calling MCP
 - Community PRs are labeled `community`. Prefer merging over reimplementing.
 
 ## Distribution & Installation Testing
-- **Installation Methods**: three distribution channels:
-  - `uvx zulipchat-mcp` (PyPI — fastest, pre-built wheels)
-  - `uvx --from git+https://github.com/akougkas/zulipchat-mcp.git zulipchat-mcp` (GitHub — builds from source)
-  - `uvx --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ zulipchat-mcp` (TestPyPI — pre-release testing)
+- **Primary artifact**: the Docker image `unfoldingword/zulipchat-mcp` on Docker Hub. `latest` tracks `develop`; `stable` and `X.Y.Z` are cut by release tags (see Release Process).
+- **Run from source (local/dev)**: `uvx --from git+https://github.com/akougkas/zulipchat-mcp.git zulipchat-mcp`.
 - **Credential loading**: zuliprc files or env vars; config-file env vars (`ZULIP_CONFIG_FILE`, `ZULIP_BOT_CONFIG_FILE`) are checked before CLI flags.
-- **Claude Code integration**: use the `--` separator (env vars before `--`):
+- **Claude Code integration** (local stdio): use the `--` separator (env vars before `--`):
   ```bash
   claude mcp add zulipchat -e ZULIP_EMAIL=bot@org.com -e ZULIP_API_KEY=key -e ZULIP_SITE=https://org.zulipchat.com -- uvx --from git+https://github.com/akougkas/zulipchat-mcp.git zulipchat-mcp
   ```
-- **Before release**: run the fake-credential MCP stdio smoke from both the project environment and the built wheel. Use real Zulip credentials only for targeted manual checks that actually require API access.
+- **Before release**: run the fake-credential MCP stdio smoke. The Docker build also runs the full test suite as a build gate.
 
 ## Security & Configuration Tips
 - Do not commit secrets. Use `.env` (gitignored). Common vars: `ZULIP_EMAIL`, `ZULIP_API_KEY`, `ZULIP_SITE` (plus optional `ZULIP_BOT_EMAIL`, `ZULIP_BOT_API_KEY`).
@@ -180,30 +178,29 @@ If a session is not bound, these skills stop and explain rather than calling MCP
 
 ## Release Process
 
-Full checklist: [RELEASING.md](RELEASING.md)
+Full runbook: [RELEASING.md](RELEASING.md). A release is a git tag `vX.Y.Z` on
+`main`; the tag triggers the Docker workflow to publish `X.Y.Z` / `X.Y` / `stable`
+to Docker Hub. `develop` publishes `latest` automatically. This fork does not
+publish to PyPI.
 
 ```bash
-uv run python scripts/bump_version.py X.Y.Z   # Bump scripted version locations
-# Update CHANGELOG.md manually
+uv run python scripts/bump_version.py X.Y.Z   # bump scripted version locations
+# update CHANGELOG.md manually
 uv sync
 uv run pytest -q && uv run mypy src && uv run ruff check . && uv run ruff format --check .
-uv build
-scripts/pre_release_smoke.sh --version X.Y.Z --allow-dirty
 uv run python scripts/release_preflight.py --version X.Y.Z --allow-dirty
-git add AGENTS.md CHANGELOG.md CLAUDE.md ROADMAP.md pyproject.toml server.json uv.lock src/zulipchat_mcp tests scripts .github docs README.md CONTRIBUTING.md RELEASING.md
-git commit -m "chore: bump version to X.Y.Z"
+uv run python scripts/mcp_stdio_smoke.py --expected-version X.Y.Z -- uv run zulipchat-mcp
+git add AGENTS.md CHANGELOG.md ROADMAP.md pyproject.toml server.json uv.lock src/zulipchat_mcp tests scripts .github docs README.md CONTRIBUTING.md RELEASING.md
+git commit -m "chore: release X.Y.Z"
 uv run python scripts/release_preflight.py --version X.Y.Z
-git tag vX.Y.Z && git push && git push --tags
-gh release create vX.Y.Z --title "vX.Y.Z - Title" --generate-notes --latest
+git tag vX.Y.Z && git push && git push --tags   # the tag triggers the Docker build
 ```
-
-Publishing a GitHub release auto-triggers `.github/workflows/publish.yml` which builds and uploads to PyPI via trusted publisher (OIDC). Never leave releases as drafts.
 
 Release invariants:
 - The tag must match `pyproject.toml` exactly (`vX.Y.Z` ↔ `version = "X.Y.Z"`).
-- The version must be in sync across `pyproject.toml`, `src/zulipchat_mcp/__init__.py`, `src/zulipchat_mcp/tools/system.py`, `server.json`, and release docs; `release_preflight.py` verifies this.
-- `scripts/pre_release_smoke.sh` is a blocking gate: it installs the built wheel and starts the stdio server with fake credentials, catching startup-only failures that `--version` cannot.
-- After publishing, comment on fixed issues with the version number, credit reporters, and invite them to upgrade.
+- Versions stay in sync across `pyproject.toml`, `src/zulipchat_mcp/__init__.py`, `src/zulipchat_mcp/tools/system.py`, `server.json`, and release docs; `release_preflight.py` verifies this.
+- `develop` → `latest` is automatic; `stable` and semver images come only from release tags.
+- After releasing, verify the image on Docker Hub and with `docker run --rm unfoldingword/zulipchat-mcp:X.Y.Z zulipchat-mcp --version`.
 
 ## Open Source Community Practices
 

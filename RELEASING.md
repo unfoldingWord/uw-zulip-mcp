@@ -1,96 +1,87 @@
 # Release Runbook
 
-This is the blocking release process for ZulipChat MCP. Follow it in order.
-If any gate fails, fix the root cause and rerun the failed command plus the full
-gate that contains it.
+This is the release process for uw-zulip-mcp. The shipped artifact is a **Docker
+image** on Docker Hub (`unfoldingword/zulipchat-mcp`); this fork does not publish
+to PyPI. Follow the steps in order. If a gate fails, fix the root cause and rerun
+the failed command plus the gate that contains it.
 
-## Release Standard
+## Stages and images
 
-- A release is not ready until the source tree, built wheel, and MCP stdio server
-  all pass from a clean environment.
-- Startup smoke tests must use fake credentials and must not contact a real Zulip
-  server. Real Zulip testing is reserved for targeted manual checks of behavior
-  that actually needs the Zulip API.
+| Stage | Branch / trigger | Image tags |
+|-------|------------------|-----------|
+| Develop (rolling) | push to `develop` | `latest`, `develop`, `develop-<sha>` |
+| Traceability | push to `main` | `main`, `main-<sha>` |
+| Production (release) | tag `vX.Y.Z` on `main` | `X.Y.Z`, `X.Y`, `X`, `stable` |
+
+`develop` auto-publishes `latest` on every push. **A production/`stable` image is
+cut only by tagging a release** — that is what "release" means here.
+
+## Release standard
+
+- A release is not ready until the source tree and the MCP stdio server pass from
+  a clean environment, and the Docker image builds (its Dockerfile runs the test
+  suite as a build gate).
+- Startup smoke tests use fake credentials and must not contact a real Zulip
+  server. Real Zulip testing is reserved for targeted manual checks.
 - Framework feature changes are release-risk changes. If a FastMCP constructor
-  argument, tool registration option, optional dependency extra, background task,
+  argument, tool-registration option, optional dependency extra, background task,
   lifespan hook, or async/sync boundary changes, add or update a contract test and
   run the MCP stdio smoke.
-- Do not publish from hope. The release artifact must be installed and exercised
-  before tagging.
 
-## One-Time Prerequisites
+## One-time prerequisites
 
-- [ ] PyPI trusted publisher configured for this repo
-  - Owner: `akougkas`
-  - Repository: `zulipchat-mcp`
-  - Workflow: `publish.yml`
-  - Environment: `pypi`
-- [ ] GitHub environment `pypi` exists in repo settings.
+- [ ] Docker Hub credentials set as repo secrets: `DOCKER_BUILD_USERNAME`,
+      `DOCKER_BUILD_TOKEN` (push access to `unfoldingword/zulipchat-mcp`).
 - [ ] Branch protection requires CI before merge to `main`.
 - [ ] Tag and release permissions are limited to maintainers.
 
-## Failure Modes To Check Explicitly
+## Failure modes to check explicitly
 
-These checks exist because v0.7.0 failed at startup even though simple
-entrypoint checks could pass.
+These checks exist because v0.7.0 failed at startup even though simple entrypoint
+checks passed.
 
-- Package extras match enabled framework features. For example, FastMCP task
-  support requires `fastmcp[... ,tasks]` so the built wheel installs `pydocket`.
-- Tool registration is tested with real `FastMCP`, not only mocks.
+- Package extras match enabled framework features (e.g. FastMCP task support
+  requires `fastmcp[...,tasks]`).
+- Tool registration is tested with a real `FastMCP`, not only mocks.
 - Server startup is tested through MCP stdio with fake credentials, including
   `ping`, `list_tools`, and `server_info`.
 - Background-task tools are async-safe and only long-running tools opt in.
-- Background services start and stop through FastMCP lifespan, not import-time or
-  process-lifetime side effects.
+- Background services start/stop through the FastMCP lifespan, not at import time.
 
-## Release Steps
+## Release steps
 
-### 1. Decide Version Number
-
-Use semver:
-
-- `PATCH` for bug fixes and documentation-only releases.
-- `MINOR` for new tools, new features, or non-breaking behavior changes.
+### 1. Decide the version number (semver)
+- `PATCH` for bug fixes and docs-only releases.
+- `MINOR` for new tools/features or non-breaking changes.
 - `MAJOR` for breaking API or configuration changes.
 
-### 2. Start From A Clean, Reproducible Environment
+### 2. Promote develop to main
+Releases are tagged on `main`. Merge the release-ready `develop` into `main`
+first (PR or fast-forward), so the tag sits on the production branch.
 
+### 3. Start from a clean environment
 ```bash
 git status --short
 rm -rf .venv .pytest_cache **/__pycache__ htmlcov .coverage* coverage.xml .uv_cache
 uv sync --reinstall
 ```
 
-If `/tmp` is full, clean stale user-owned scratch directories before running
-wheel smoke tests. Do not delete system-owned paths.
-
-### 3. Bump Version Strings
-
-Preview first when practical:
-
+### 4. Bump version strings
 ```bash
 uv run python scripts/bump_version.py --dry-run X.Y.Z
 uv run python scripts/bump_version.py X.Y.Z
 ```
+This updates the scripted version locations (`pyproject.toml`,
+`src/zulipchat_mcp/__init__.py`, `src/zulipchat_mcp/tools/system.py`,
+`server.json`, `AGENTS.md`, `ROADMAP.md`). Audit Markdown for stale version
+references that are intentionally not scripted.
 
-This updates scripted version locations. Manually audit Markdown and packaging
-metadata for stale version references that are intentionally not scripted.
+### 5. Update release notes
+- `CHANGELOG.md`: new top section with date and user-visible changes. This is the
+  source of truth; the GitHub release body can be generated from it.
+- Any user/integration docs affected by behavior, run commands, or tool counts.
 
-### 4. Update Release Notes
-
-Update:
-
-- `CHANGELOG.md`: new top section with date, user-visible fixes, and credits.
-  This is the source of truth for release notes; the GitHub release itself is
-  generated automatically with `gh release create --generate-notes`.
-- Any user or integration docs affected by behavior, install commands, or tool
-  counts.
-
-For community-reported fixes, credit reporters and PR authors in both changelog
-and issue or PR responses.
-
-### 5. Run Source Quality Gates
-
+### 6. Source quality gates
 ```bash
 uv sync
 uv run pytest -q
@@ -98,138 +89,76 @@ uv run mypy src
 uv run ruff check .
 uv run ruff format --check .
 ```
-
-The full pytest command is the release gate because it enforces coverage. Use
+The full pytest run is the gate (it enforces the 60% coverage floor). Use
 `--no-cov` only for exploratory subsets, never as release evidence.
 
-### 6. Run Artifact And MCP Startup Gates
-
+### 7. Preflight and startup smoke
 ```bash
 uv run python scripts/release_preflight.py --version X.Y.Z --allow-dirty
-uv build
-scripts/pre_release_smoke.sh --version X.Y.Z --allow-dirty
-uvx --from dist/zulipchat_mcp-X.Y.Z-py3-none-any.whl zulipchat-mcp --version
 uv run python scripts/mcp_stdio_smoke.py --expected-version X.Y.Z -- uv run zulipchat-mcp
 ```
-
-`scripts/pre_release_smoke.sh` also installs the built wheel into a temporary
-venv and runs the MCP stdio smoke from that installed wheel. That is the check
-that catches missing extras, broken tool registration, and startup-only failures.
-
-Optional distribution smoke after a release candidate is pushed:
-
+Optional packaging sanity (builds a wheel and runs the installed-wheel stdio
+smoke — catches missing extras and startup-only failures):
 ```bash
-scripts/pre_release_smoke.sh --version X.Y.Z --with-git --git-ref main
+uv build
+scripts/pre_release_smoke.sh --version X.Y.Z --allow-dirty
 ```
 
-Run TestPyPI only when a pre-release has actually been uploaded there:
-
+### 8. Commit on main
+Do not stage generated artifacts (`dist/`, `htmlcov/`, `.coverage*`,
+`coverage.xml`).
 ```bash
-scripts/pre_release_smoke.sh --version X.Y.Z --with-testpypi
-```
-
-### 7. Stage Intentionally And Commit
-
-Generated artifacts must not be staged: `dist/`, `htmlcov/`, `.coverage*`, and
-`coverage.xml`.
-
-```bash
-git diff --stat
-git status --short
-git add AGENTS.md CHANGELOG.md CLAUDE.md ROADMAP.md pyproject.toml \
+git add AGENTS.md CHANGELOG.md ROADMAP.md pyproject.toml \
   server.json uv.lock src/zulipchat_mcp tests scripts .github docs README.md \
   CONTRIBUTING.md RELEASING.md
-git status --short
-git commit -m "chore: bump version to X.Y.Z"
+git commit -m "chore: release X.Y.Z"
 ```
+(`CLAUDE.md` is a pointer to `AGENTS.md`; no need to stage it for version bumps.)
 
-Adjust the commit message for patch releases that include fixes, for example
-`fix: make FastMCP task support explicit`.
-
-### 8. Run Post-Commit Preflight
-
+### 9. Post-commit preflight
 ```bash
 uv run python scripts/release_preflight.py --version X.Y.Z
 ```
-
 This must pass without `--allow-dirty`.
 
-### 9. Push, Tag, And Create The Release
-
-Prepare the exact commands, then run only after maintainer confirmation:
-
+### 10. Tag and push — this publishes the image
 ```bash
 git push
 git tag vX.Y.Z
 git push --tags
-gh release create vX.Y.Z \
-  --title "vX.Y.Z - Short Description" \
-  --generate-notes \
-  --latest
 ```
+Pushing the `vX.Y.Z` tag triggers `.github/workflows/docker-build-push.yaml`,
+which builds and pushes `X.Y.Z`, `X.Y`, `X`, and `stable` to Docker Hub.
 
-`--generate-notes` builds the GitHub release body from merged PRs and commits
-since the previous tag. The detailed user-facing changelog lives in
-`CHANGELOG.md`. Publishing the GitHub release triggers
-`.github/workflows/publish.yml`, which builds and uploads to PyPI through
-trusted publisher OIDC.
-
-### 10. Verify Published Artifacts
-
-- [ ] GitHub release exists and is marked latest.
-- [ ] Publish workflow completed successfully.
-- [ ] PyPI shows the new version.
-- [ ] Fresh install reports the new version:
-
+Optional GitHub release notes:
 ```bash
-uvx --refresh-package zulipchat-mcp zulipchat-mcp --version
+gh release create vX.Y.Z --title "vX.Y.Z - Short Description" --generate-notes
 ```
 
-- [ ] Fresh MCP stdio startup works from the published package:
-
+### 11. Verify the published image
+- [ ] The Docker workflow run succeeded (Actions tab).
+- [ ] Docker Hub shows the new `X.Y.Z` and updated `stable` tags.
+- [ ] A pull reports the new version:
 ```bash
-uv run python scripts/mcp_stdio_smoke.py --expected-version X.Y.Z -- \
-  uvx --refresh-package zulipchat-mcp zulipchat-mcp
+docker run --rm unfoldingword/zulipchat-mcp:X.Y.Z zulipchat-mcp --version
 ```
 
-Run this from the release commit checkout so the smoke script is available.
-
-### 11. Notify Community
-
-- Comment on fixed issues and addressed PRs.
-- State the released version and upgrade command.
+### 12. Notify community
+- Comment on fixed issues and addressed PRs with the released version.
 - Credit reporters and contributors.
-- Do not claim the release is published until the GitHub release exists and the
-  publish workflow has started or completed.
 
 ## Troubleshooting
 
-**Preflight failed**
+**Preflight failed** — fix version alignment or missing changelog section; rerun
+with `--allow-dirty` until clean, then without.
 
-- Fix version alignment or missing release docs.
-- Rerun `uv run python scripts/release_preflight.py --version X.Y.Z --allow-dirty`.
+**MCP stdio smoke failed** — release blocker. Inspect whether startup fails during
+configuration, FastMCP construction, tool registration, lifespan startup, or
+`server_info`. Common causes: missing dependency extras, sync functions registered
+as background tasks, bad type annotations, stdout pollution, import-time side
+effects.
 
-**MCP stdio smoke failed**
-
-- Treat this as a release blocker.
-- Inspect whether startup fails during configuration, FastMCP construction, tool
-  registration, lifespan startup, or `server_info`.
-- Common causes: missing dependency extras, sync functions registered as
-  background tasks, bad type annotations, stdout pollution, or import-time side
-  effects.
-
-**Publish workflow failed**
-
-- Check the Actions logs.
-- If the tag or GitHub release is wrong, delete the remote tag and release,
-  fix the release commit, retag, and recreate the release.
-
-**PyPI trusted publisher is not configured**
-
-- Prefer fixing trusted publisher configuration.
-- Use manual upload only as a maintainer-approved fallback:
-
-```bash
-uv build
-uv run twine upload dist/*
-```
+**Docker build/push failed** — check the Actions logs. If the tag is wrong, delete
+the remote tag (`git push --delete origin vX.Y.Z`), fix the release commit, retag,
+and push again. Verify the `DOCKER_BUILD_USERNAME` / `DOCKER_BUILD_TOKEN` secrets
+are present and valid.

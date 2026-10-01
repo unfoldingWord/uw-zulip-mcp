@@ -11,7 +11,6 @@ Options:
   --allow-existing-tag   Skip local tag-availability enforcement in preflight
   --with-git             Also smoke-test GitHub install via uvx --from git+...
   --git-ref REF          Git ref for --with-git (default: main)
-  --with-testpypi        Also smoke-test TestPyPI install for this version
   -h, --help             Show this help text
 EOF
 }
@@ -22,7 +21,6 @@ ALLOW_DIRTY=0
 ALLOW_EXISTING_TAG=0
 WITH_GIT=0
 GIT_REF="main"
-WITH_TESTPYPI=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -49,10 +47,6 @@ while [[ $# -gt 0 ]]; do
     --git-ref)
       GIT_REF="${2:-}"
       shift 2
-      ;;
-    --with-testpypi)
-      WITH_TESTPYPI=1
-      shift
       ;;
     -h|--help)
       usage
@@ -130,15 +124,6 @@ if [[ "$WITH_GIT" -eq 1 ]]; then
   uvx --from "git+https://github.com/akougkas/zulipchat-mcp.git@${GIT_REF}" zulipchat-mcp --version
   uvx --from "git+https://github.com/akougkas/zulipchat-mcp.git@${GIT_REF}" zulipchat-mcp-setup --version
   uvx --from "git+https://github.com/akougkas/zulipchat-mcp.git@${GIT_REF}" zulipchat-mcp-integrate --version
-fi
-
-if [[ "$WITH_TESTPYPI" -eq 1 ]]; then
-  echo "==> TestPyPI install smoke (version: $VERSION)"
-  uvx \
-    --index-url https://test.pypi.org/simple/ \
-    --extra-index-url https://pypi.org/simple/ \
-    "zulipchat-mcp==${VERSION}" \
-    --version
 fi
 
 echo "==> Pre-release smoke completed"
