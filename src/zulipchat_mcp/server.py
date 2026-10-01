@@ -311,6 +311,24 @@ def main() -> None:
                 "relative paths. Set it to this server's public URL."
             )
 
+        # Probe the vault at startup: CA file readable, TLS reachable, auth OK.
+        # Uses a throwaway client so the request-time singleton is untouched.
+        import asyncio
+
+        from .core.secret_store import SecretStore
+
+        async def _probe_vault() -> None:
+            probe = SecretStore()
+            try:
+                await probe.selfcheck()
+            finally:
+                await probe.aclose()
+
+        try:
+            asyncio.run(_probe_vault())
+        except Exception as e:  # never block startup on the probe
+            logger.error("OpenBao startup selfcheck crashed: %s", e)
+
     logger.info("FastMCP initialized successfully")
 
     # Determine tool modes

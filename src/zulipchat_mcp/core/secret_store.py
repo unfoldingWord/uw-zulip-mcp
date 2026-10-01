@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import os
 import time
 
 import httpx
@@ -190,6 +191,57 @@ class SecretStore:
                 resp.raise_for_status()
         except httpx.HTTPError as e:
             raise SecretStoreError(f"OpenBao delete failed: {e}") from e
+
+    async def selfcheck(self) -> None:
+        """Log config and probe the CA file, TLS connectivity, and auth.
+
+        Never raises — it only logs — so a transient vault problem does not
+        stop the server from booting. Run once at startup to diagnose setup.
+        """
+        logger.info(
+            "OpenBao selfcheck: addr=%s mount=%s path=%s tls_verify=%s cacert=%s",
+            self._addr,
+            self._kv_mount,
+            self._kv_path,
+            self._verify_tls,
+            self._cacert or "(default trust store)",
+        )
+
+        # 1. Is the CA file present and readable by this process?
+        if self._cacert:
+            if not os.path.isfile(self._cacert):
+                logger.error("OPENBAO_CACERT file not found: %s", self._cacert)
+            elif not os.access(self._cacert, os.R_OK):
+                logger.error(
+                    "OPENBAO_CACERT file not readable by uid %s: %s",
+                    os.getuid(),
+                    self._cacert,
+                )
+            else:
+                logger.info(
+                    "OPENBAO_CACERT readable: %s (%d bytes)",
+                    self._cacert,
+                    os.path.getsize(self._cacert),
+                )
+
+        # 2. TLS + connectivity probe (unauthenticated health endpoint).
+        try:
+            resp = await self._http().get("/v1/sys/health")
+            logger.info(
+                "OpenBao reachable: GET /v1/sys/health -> HTTP %s", resp.status_code
+            )
+        except httpx.HTTPError as e:
+            logger.error(
+                "OpenBao connection/TLS probe failed (%s): %s", type(e).__name__, e
+            )
+            return
+
+        # 3. Authentication probe (AppRole login or static token).
+        try:
+            await self._ensure_token()
+            logger.info("OpenBao authentication OK")
+        except SecretStoreError as e:
+            logger.error("OpenBao authentication failed: %s", e)
 
     async def aclose(self) -> None:
         if self._client is not None:
