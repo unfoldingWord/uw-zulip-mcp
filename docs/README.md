@@ -70,4 +70,3 @@ uw-zulip-mcp — unfoldingWord fork of ZulipChat MCP v0.7.1 with privacy control
 ## Release History
 
 - [CHANGELOG](../CHANGELOG.md) — current: upstream v0.7.1 merged onto the v0.7.0-uw fork
-- `docs/releases/` contains historical snapshots for earlier versions.
