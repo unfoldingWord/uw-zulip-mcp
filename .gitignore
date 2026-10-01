@@ -221,3 +221,6 @@ config.json
 .mcpregistry_*
 .planning/
 .DS_Store
+
+# Working-stage docs (local, not committed)
+working-docs/
