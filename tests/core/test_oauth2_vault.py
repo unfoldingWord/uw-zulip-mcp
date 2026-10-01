@@ -476,3 +476,38 @@ def test_secretstore_verify_disabled_overrides_cacert():
         addr="https://bao", token="t", cacert="/certs/ca.pem", verify_tls=False
     )
     assert store._verify() is False
+
+
+# --- startup self-check ----------------------------------------------------
+
+
+def test_startup_required_default_false(monkeypatch):
+    from src.zulipchat_mcp.core import hosted_config
+
+    monkeypatch.delenv("OPENBAO_STARTUP_REQUIRED", raising=False)
+    assert hosted_config.openbao_startup_required() is False
+
+
+def test_startup_required_true(monkeypatch):
+    from src.zulipchat_mcp.core import hosted_config
+
+    monkeypatch.setenv("OPENBAO_STARTUP_REQUIRED", "1")
+    assert hosted_config.openbao_startup_required() is True
+
+
+async def test_selfcheck_ok_when_reachable():
+    def handler(request):
+        if request.url.path == "/v1/sys/health":
+            return httpx.Response(200, json={"initialized": True})
+        return httpx.Response(404, json={})
+
+    store = _bao_store(handler)  # static token -> auth needs no HTTP
+    assert await store.selfcheck() is True
+
+
+async def test_selfcheck_false_on_connection_failure():
+    def boom(request):
+        raise httpx.ConnectError("down")
+
+    store = _bao_store(boom)
+    assert await store.selfcheck() is False

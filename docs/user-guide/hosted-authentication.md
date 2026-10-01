@@ -97,8 +97,9 @@ the server logs the claims it did receive. For `jwt` mode, ensure your IdP puts
 | `OPENBAO_KV_MOUNT` | `secret` | KV v2 mount |
 | `OPENBAO_KV_PATH` | `zulip-mcp/users` | Base path for user secrets |
 | `OPENBAO_NAMESPACE` | — | Optional namespace |
-| `OPENBAO_TLS_VERIFY` | `1` | Set `0` to disable TLS verification (dev only) |
+| `OPENBAO_TLS_VERIFY` | `true` | Set to `false` to disable TLS verification (dev only) |
 | `OPENBAO_CACERT` | — | Path (inside the container) to a PEM CA bundle, for a private/internal CA |
+| `OPENBAO_STARTUP_REQUIRED` | `false` | Set to `true` to abort startup if the vault self-check fails (fail fast); default logs and continues |
 
 Each user's key is stored at `<mount>/data/<path>/<sha256(email)>`. The hash
 keeps the path clean and avoids listing everyone's email; operators can still

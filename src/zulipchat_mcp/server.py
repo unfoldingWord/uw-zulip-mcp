@@ -317,17 +317,26 @@ def main() -> None:
 
         from .core.secret_store import SecretStore
 
-        async def _probe_vault() -> None:
+        async def _probe_vault() -> bool:
             probe = SecretStore()
             try:
-                await probe.selfcheck()
+                return await probe.selfcheck()
             finally:
                 await probe.aclose()
 
         try:
-            asyncio.run(_probe_vault())
-        except Exception as e:  # never block startup on the probe
+            vault_ok = asyncio.run(_probe_vault())
+        except Exception as e:  # never block startup on the probe itself
             logger.error("OpenBao startup selfcheck crashed: %s", e)
+            vault_ok = False
+
+        if not vault_ok and hosted_config.openbao_startup_required():
+            logger.error(
+                "OpenBao self-check failed and OPENBAO_STARTUP_REQUIRED is set; "
+                "refusing to start. Fix OpenBao connectivity/credentials, or "
+                "unset OPENBAO_STARTUP_REQUIRED to boot anyway."
+            )
+            return
 
     logger.info("FastMCP initialized successfully")
 

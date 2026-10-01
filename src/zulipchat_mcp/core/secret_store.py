@@ -192,12 +192,14 @@ class SecretStore:
         except httpx.HTTPError as e:
             raise SecretStoreError(f"OpenBao delete failed: {e}") from e
 
-    async def selfcheck(self) -> None:
+    async def selfcheck(self) -> bool:
         """Log config and probe the CA file, TLS connectivity, and auth.
 
-        Never raises — it only logs — so a transient vault problem does not
-        stop the server from booting. Run once at startup to diagnose setup.
+        Returns True when every probe passed, False otherwise. Never raises —
+        it only logs — so the caller decides whether a failure is fatal (see
+        OPENBAO_STARTUP_REQUIRED). Run once at startup to diagnose setup.
         """
+        ok = True
         logger.info(
             "OpenBao selfcheck: addr=%s mount=%s path=%s tls_verify=%s cacert=%s",
             self._addr,
@@ -211,12 +213,14 @@ class SecretStore:
         if self._cacert:
             if not os.path.isfile(self._cacert):
                 logger.error("OPENBAO_CACERT file not found: %s", self._cacert)
+                ok = False
             elif not os.access(self._cacert, os.R_OK):
                 logger.error(
                     "OPENBAO_CACERT file not readable by uid %s: %s",
                     os.getuid(),
                     self._cacert,
                 )
+                ok = False
             else:
                 logger.info(
                     "OPENBAO_CACERT readable: %s (%d bytes)",
@@ -234,7 +238,7 @@ class SecretStore:
             logger.error(
                 "OpenBao connection/TLS probe failed (%s): %s", type(e).__name__, e
             )
-            return
+            return False
 
         # 3. Authentication probe (AppRole login or static token).
         try:
@@ -242,6 +246,9 @@ class SecretStore:
             logger.info("OpenBao authentication OK")
         except SecretStoreError as e:
             logger.error("OpenBao authentication failed: %s", e)
+            ok = False
+
+        return ok
 
     async def aclose(self) -> None:
         if self._client is not None:

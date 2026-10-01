@@ -12,7 +12,7 @@ beyond process lifetime; values are read on demand.
       OPENBAO_TOKEN        Direct token (dev/testing; bypasses AppRole)
       OPENBAO_KV_MOUNT     KV v2 mount (default "secret")
       OPENBAO_KV_PATH      Base path for user secrets (default "zulip-mcp/users")
-      OPENBAO_TLS_VERIFY   "0" disables TLS verification (dev only)
+      OPENBAO_TLS_VERIFY   "false" disables TLS verification (dev only)
 
     Key cache
       ZULIPCHAT_KEY_CACHE_TTL_SECONDS   Sliding inactivity TTL (default 86400)
@@ -101,6 +101,16 @@ def openbao_cacert() -> str | None:
     TLS handshake. Ignored when OPENBAO_TLS_VERIFY is disabled.
     """
     return os.getenv("OPENBAO_CACERT", "").strip() or None
+
+
+def openbao_startup_required() -> bool:
+    """When true, a failed OpenBao self-check aborts startup (fail fast).
+
+    Default false: a transient OpenBao outage should not stop the server from
+    booting. Enable in strict environments where a broken vault must fail the
+    deploy.
+    """
+    return _bool_env("OPENBAO_STARTUP_REQUIRED", False)
 
 
 def vault_enabled() -> bool:
