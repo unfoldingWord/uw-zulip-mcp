@@ -11,7 +11,7 @@ uw-zulip-mcp — unfoldingWord fork of ZulipChat MCP v0.7.1 with privacy control
 - [Setup Wizard](user-guide/setup-wizard.md)
 - [Troubleshooting](TROUBLESHOOTING.md)
 
-## Privacy & Access Controls (v0.7.0-uw)
+## Privacy & Access Controls (v0.7.1)
 
 - **Hosted mode & authentication** — multi-user deployments with OAuth 2.1 and per-request credentials, nothing stored server-side ([Hosted Authentication](user-guide/hosted-authentication.md))
 - **Channel filtering** — JD taxonomy-based access control ([Configuration](user-guide/configuration.md#channel-filter))

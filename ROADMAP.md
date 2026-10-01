@@ -10,7 +10,7 @@ Released 2026-05-11 — [PyPI](https://pypi.org/project/zulipchat-mcp/)
 - Always-on message listener (DMs + streams)
 - AFK auto-return enforcement
 
-## v0.6.0 (Next)
+## Planned (Next)
 
 ### Feature 1: Multi-Organization Support
 **Problem**: Users with multiple Zulip orgs (work, personal, open-source) can't switch contexts.

@@ -1,6 +1,6 @@
 # Configuration
 
-This page documents all runtime configuration for uw-zulip-mcp v0.7.0-uw.
+This page documents all runtime configuration for uw-zulip-mcp v0.7.1.
 
 ## Recommended setup
 
@@ -52,7 +52,7 @@ zulipchat-mcp [options]
 | `--transport MODE` | Transport: `stdio` (default), `http`, `streamable-http`, `sse` |
 | `--host HOST` | Bind address for HTTP/SSE mode (default: `127.0.0.1`) |
 | `--port PORT` | Listen port for HTTP/SSE mode (default: `3000`) |
-| `--hosted` | Multi-user hosted mode: per-request credentials via `X-Zulip-*` headers, none stored server-side ([details](hosted-authentication.md)) |
+| `--hosted` | OAuth2-only multi-user mode: clients authenticate with OAuth; the server resolves each user's Zulip API key from OpenBao/Vault ([details](hosted-authentication.md)) |
 
 ## Environment variables
 

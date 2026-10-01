@@ -1,6 +1,6 @@
 # Architecture Overview
 
-uw-zulip-mcp v0.7.0-uw — unfoldingWord fork of ZulipChat MCP with privacy controls.
+uw-zulip-mcp v0.7.1 — unfoldingWord fork of ZulipChat MCP with privacy controls.
 
 ## Top-level modules
 
@@ -39,13 +39,13 @@ Tool registration respects two mode flags:
 
 This produces:
 
-| Mode | Approximate tool count |
-|------|----------------------|
-| Core (default) | 19 |
+| Mode | Tool count |
+|------|-----------|
+| Core (default) | 20 |
 | Core + read-only | 9 |
 | Core + read-only + no agents | 9 |
-| Extended | ~55 |
-| Extended + read-only | ~25 |
+| Extended | 56 |
+| Extended + read-only | 24 |
 
 ## Channel filter architecture
 
