@@ -15,9 +15,51 @@ from .cache import cache_decorator, stream_cache, user_cache
 from .channel_filter import get_channel_filter, is_channel_allowed
 
 if TYPE_CHECKING:
-    from .request_credentials import RequestCredentials
+    from .request_credentials import AuthFailureSignal, RequestCredentials
 
 logger = logging.getLogger(__name__)
+
+# Zulip returns this error code (with HTTP 401) when an API key is invalid —
+# e.g. the user rotated or revoked it on the Zulip side. See _looks_like_auth_failure.
+_AUTH_FAILURE_CODES = {"UNAUTHORIZED"}
+
+
+def _looks_like_auth_failure(result: Any) -> bool:
+    """True when a Zulip response dict signals a rejected API key / identity.
+
+    Zulip returns ``{"result": "error", "code": "UNAUTHORIZED", ...}`` with
+    HTTP 401 for a bad key. The zulip library's non-JSON fallback instead
+    yields ``{"result": "http-error", "status_code": ...}``; cover that too.
+    """
+    if not isinstance(result, dict):
+        return False
+    code = result.get("code")
+    if isinstance(code, str) and code.upper() in _AUTH_FAILURE_CODES:
+        return True
+    if result.get("result") == "http-error" and result.get("status_code") in (401, 403):
+        return True
+    return False
+
+
+def _install_auth_failure_hook(client: Client, signal: "AuthFailureSignal") -> None:
+    """Wrap ``do_api_query`` so every API response is checked for an auth failure.
+
+    ``do_api_query`` is the single chokepoint all Zulip API traffic funnels
+    through, so one wrapper covers every endpoint. The instance attribute
+    shadows the class method; internal ``self.do_api_query`` calls resolve to it.
+    """
+    original = client.do_api_query
+
+    def wrapped(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        result = original(*args, **kwargs)
+        try:
+            if _looks_like_auth_failure(result):
+                signal.trip()
+        except Exception:  # never let detection break a real API call
+            pass
+        return result
+
+    client.do_api_query = wrapped  # type: ignore[method-assign]
 
 
 @dataclass
@@ -75,9 +117,17 @@ class ZulipClientWrapper:
                 and `site` must be supplied (always the server-pinned site).
             site: Zulip site URL to pair with explicit credentials.
         """
+        # Per-request user clients (hosted mode) watch for a rotated/revoked key
+        # so the middleware can clear it and prompt re-enrollment. Captured here,
+        # in the request context, because _create_client may run in a worker
+        # thread where the contextvar is no longer reachable.
+        self._auth_signal: AuthFailureSignal | None = None
+
         if credentials is not None:
             if not site:
                 raise ValueError("site is required with explicit credentials")
+            from .request_credentials import get_auth_failure_signal
+
             self.config_manager = config_manager
             self.use_bot_identity = False
             self._client_config = {
@@ -91,6 +141,7 @@ class ZulipClientWrapper:
             self._client: Client | None = None
             self.current_email: str | None = credentials.email
             self._base_url = self._normalize_site_base_url(site)
+            self._auth_signal = get_auth_failure_signal()
             return
 
         cm = config_manager or ConfigManager()
@@ -158,16 +209,18 @@ class ZulipClientWrapper:
 
                 if not self._base_url and hasattr(client, "base_url"):
                     self._base_url = self._normalize_site_base_url(client.base_url)
-
-                return client
             else:
-                return Client(
+                client = Client(
                     email=self._client_config["email"],
                     api_key=self._client_config["api_key"],
                     site=self._client_config["site"],
                 )
         except Exception as e:
             raise ConnectionError(f"Failed to connect to Zulip: {e}") from e
+
+        if self._auth_signal is not None:
+            _install_auth_failure_hook(client, self._auth_signal)
+        return client
 
     @property
     def is_connected(self) -> bool:

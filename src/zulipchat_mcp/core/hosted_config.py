@@ -16,6 +16,8 @@ beyond process lifetime; values are read on demand.
 
     Key cache
       ZULIPCHAT_KEY_CACHE_TTL_SECONDS   Sliding inactivity TTL (default 86400)
+      ZULIPCHAT_REENROLL_ON_AUTH_FAILURE  On a Zulip auth rejection, clear the
+                                        stored key and re-enroll (default true)
 
     Enrollment web flow
       ZULIPCHAT_ENROLL_MAX_ATTEMPTS     Failed tries before cool-off (default 6)
@@ -119,6 +121,17 @@ def vault_enabled() -> bool:
 
 def key_cache_ttl_seconds() -> int:
     return _int_env("ZULIPCHAT_KEY_CACHE_TTL_SECONDS", 86_400)
+
+
+def reenroll_on_auth_failure() -> bool:
+    """When true, a Zulip auth rejection clears the stored key and re-enrolls.
+
+    If Zulip rejects a user's stored API key (they rotated or revoked it), drop
+    the cached copy, delete the vault secret, and hand back an enrollment link
+    on that same call. Default true. Set false to keep the stale key in the
+    vault and only surface Zulip's error (no automatic deletion).
+    """
+    return env_bool("ZULIPCHAT_REENROLL_ON_AUTH_FAILURE", True)
 
 
 # --- Enrollment ------------------------------------------------------------

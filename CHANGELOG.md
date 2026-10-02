@@ -2,6 +2,11 @@
 
 All notable changes to ZulipChat MCP are documented in this file.
 
+## [Unreleased]
+
+### Added
+- **Automatic re-enrollment on Zulip key rotation (hosted mode)** — when Zulip rejects a user's stored API key (they rotated or revoked it), the server detects the `UNAUTHORIZED` response, clears the key from the in-memory cache and the vault, and returns a fresh `/enroll` link in the same response so the user can add their new key. Previously the stale key kept being used until the cache TTL expired or the process restarted. Controlled by the new `ZULIPCHAT_REENROLL_ON_AUTH_FAILURE` (default `true`); set `false` to keep the old manual flow (surface Zulip's error, operator deletes the key).
+
 ## [0.8.0] - 2026-10-02
 
 ### Added

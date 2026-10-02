@@ -159,6 +159,7 @@ Notes:
 | `ZULIPCHAT_ENROLL_MAX_ATTEMPTS` | `6` | Failed submissions before a cool-off |
 | `ZULIPCHAT_ENROLL_COOLOFF_SECONDS` | `900` | Cool-off duration after too many failures |
 | `ZULIPCHAT_KEY_CACHE_TTL_SECONDS` | `86400` | In-memory key cache inactivity TTL |
+| `ZULIPCHAT_REENROLL_ON_AUTH_FAILURE` | `true` | When Zulip rejects a stored key, clear it (cache + vault) and return a fresh `/enroll` link on that same call. Set `false` to keep the stale key and only surface Zulip's error. |
 
 ## Client setup (Claude Code)
 
@@ -172,8 +173,14 @@ a Zulip tool, you receive an `/enroll` link; open it, paste your Zulip API key
 After that, everything works automatically.
 
 **Key rotation / revocation:** rotate the key in Zulip, then run any Zulip tool
-again and use the fresh `/enroll` link to submit the new key. An operator can
-also delete a user's stored key from the vault.
+again. The server detects that Zulip rejected the old key, clears it from the
+cache and the vault automatically, and returns a fresh `/enroll` link in the
+same response — submit your new key there and continue. (This automatic cleanup
+is controlled by `ZULIPCHAT_REENROLL_ON_AUTH_FAILURE`, on by default; with it
+off, use the manual flow and have an operator delete the stale key from the
+vault.) Across multiple replicas the deletion is shared, but another replica
+that still has the old key cached will clear it the first time it, too, hits the
+rejection.
 
 ## Deployment requirements
 

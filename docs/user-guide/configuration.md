@@ -146,6 +146,7 @@ Full guide: [Hosted Mode & Authentication](hosted-authentication.md).
 | `ZULIPCHAT_ENROLL_MAX_ATTEMPTS` | `6` | Failed submissions before a cool-off |
 | `ZULIPCHAT_ENROLL_COOLOFF_SECONDS` | `900` | Cool-off duration after too many failures |
 | `ZULIPCHAT_KEY_CACHE_TTL_SECONDS` | `86400` | In-memory key cache inactivity TTL (sliding) |
+| `ZULIPCHAT_REENROLL_ON_AUTH_FAILURE` | `true` | On a Zulip auth rejection, clear the stored key (cache + vault) and re-enroll |
 
 ### Audit logging
 

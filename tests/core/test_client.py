@@ -6,6 +6,12 @@ import pytest
 
 from src.zulipchat_mcp.config import ConfigManager, ZulipConfig
 from src.zulipchat_mcp.core.client import ZulipClientWrapper, ZulipMessage
+from src.zulipchat_mcp.core.request_credentials import (
+    AuthFailureSignal,
+    RequestCredentials,
+    bind_auth_failure_signal,
+    unbind_auth_failure_signal,
+)
 
 
 class TestZulipClientWrapper:
@@ -253,3 +259,59 @@ class TestZulipClientWrapper:
             assert summary["total_messages"] == 3
             assert summary["top_senders"]["User1"] == 2
             assert summary["streams"]["general"]["topics"]["Topic1"] == 2
+
+
+class TestAuthFailureHook:
+    """A per-request user client trips the auth-failure signal on UNAUTHORIZED."""
+
+    def _wrapper_with_signal(self, signal, raw_client):
+        """Build a credentials-based wrapper whose client is `raw_client`."""
+        creds = RequestCredentials(email="u@example.com", api_key="k" * 32)
+        token = bind_auth_failure_signal(signal)
+        try:
+            with patch("src.zulipchat_mcp.core.client.Client", return_value=raw_client):
+                wrapper = ZulipClientWrapper(
+                    credentials=creds, site="https://chat.example.com"
+                )
+                _ = wrapper.client  # force lazy creation + hook install
+            return wrapper
+        finally:
+            unbind_auth_failure_signal(token)
+
+    def test_trips_on_unauthorized(self):
+        signal = AuthFailureSignal()
+        raw = MagicMock()
+        raw.do_api_query = MagicMock(
+            return_value={"result": "error", "code": "UNAUTHORIZED", "msg": "bad"}
+        )
+        wrapper = self._wrapper_with_signal(signal, raw)
+
+        result = wrapper.client.do_api_query({}, "users/me", method="GET")
+
+        assert result["code"] == "UNAUTHORIZED"  # passthrough preserved
+        assert signal.triggered is True
+
+    def test_does_not_trip_on_success(self):
+        signal = AuthFailureSignal()
+        raw = MagicMock()
+        raw.do_api_query = MagicMock(return_value={"result": "success", "id": 1})
+        wrapper = self._wrapper_with_signal(signal, raw)
+
+        wrapper.client.do_api_query({}, "messages", method="POST")
+
+        assert signal.triggered is False
+
+    def test_no_hook_without_signal(self):
+        """No bound signal (e.g. bot/stdio client): do_api_query is untouched."""
+        raw = MagicMock()
+        original = MagicMock(return_value={"result": "error", "code": "UNAUTHORIZED"})
+        raw.do_api_query = original
+        creds = RequestCredentials(email="u@example.com", api_key="k" * 32)
+        with patch("src.zulipchat_mcp.core.client.Client", return_value=raw):
+            wrapper = ZulipClientWrapper(
+                credentials=creds, site="https://chat.example.com"
+            )
+            _ = wrapper.client
+
+        # The method was not wrapped (identity object unchanged).
+        assert wrapper.client.do_api_query is original
