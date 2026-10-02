@@ -121,6 +121,8 @@ Full guide: [Hosted Mode & Authentication](hosted-authentication.md).
 | `ZULIPCHAT_AUTH_JWKS_URI` / `ZULIPCHAT_AUTH_ISSUER` / `ZULIPCHAT_AUTH_AUDIENCE` | — | JWT verification (`jwt`) |
 | `ZULIPCHAT_AUTH_STATIC_TOKENS` | — | Comma-separated bearer tokens (`static`, dev/test only) |
 | `ZULIPCHAT_AUTH_SCOPES` | `openid email profile` | Scopes to request (`google`, `oidc`). The email scope is required — users are keyed by email |
+| `ZULIPCHAT_ALLOWED_EMAIL_DOMAINS` | — | Comma/space-separated email domains allowed to use the server (e.g. `unfoldingword.org`). Fail-closed: if this and `ZULIPCHAT_ALLOWED_EMAILS` are both unset, all identities are rejected (with a startup warning) |
+| `ZULIPCHAT_ALLOWED_EMAILS` | — | Comma/space-separated explicit email addresses allowed in addition to the domains (for external collaborators) |
 
 #### OpenBao / Vault (user key store)
 

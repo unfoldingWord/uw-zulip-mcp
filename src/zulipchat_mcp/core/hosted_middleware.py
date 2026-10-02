@@ -24,6 +24,7 @@ from . import hosted_config, hosted_runtime
 from .credential_resolver import (
     CredentialResolutionUnavailable,
     EnrollmentRequired,
+    IdentityNotAllowed,
     resolve_request_credentials,
 )
 from .enrollment import mint_enrollment_token
@@ -48,6 +49,11 @@ _NO_IDENTITY_MSG = (
 _VAULT_DOWN_MSG = (
     "Your credentials could not be looked up right now (the secret store is "
     "unavailable). Please try again shortly."
+)
+
+_NOT_ALLOWED_MSG = (
+    "Your account is not authorized to use this server. If you believe this is "
+    "a mistake, contact your administrator."
 )
 
 
@@ -104,6 +110,9 @@ class ZulipCredentialMiddleware(Middleware):
     ) -> Any:
         try:
             creds = await resolve_request_credentials()
+        except IdentityNotAllowed as e:
+            logger.warning("Rejected identity not on allowlist: %s", e.email)
+            raise ToolError(_NOT_ALLOWED_MSG) from None
         except EnrollmentRequired as e:
             raise ToolError(_enrollment_message(e.email)) from None
         except CredentialResolutionUnavailable:

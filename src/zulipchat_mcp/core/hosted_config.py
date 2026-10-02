@@ -26,6 +26,13 @@ beyond process lifetime; values are read on demand.
       ZULIPCHAT_ENROLL_SECRET           HMAC secret for enrollment links
       ZULIPCHAT_PUBLIC_URL              Public URL of this server (for links);
                                         falls back to ZULIPCHAT_AUTH_BASE_URL
+
+    Identity allowlist (hosted mode)
+      ZULIPCHAT_ALLOWED_EMAIL_DOMAINS   Comma/space-separated domains allowed
+                                        to use the server (e.g. unfoldingword.org)
+      ZULIPCHAT_ALLOWED_EMAILS          Comma/space-separated explicit addresses
+                                        allowed in addition to the domains
+                                        (both unset = deny all; fail-closed)
 """
 
 from __future__ import annotations
@@ -182,3 +189,57 @@ def public_base_url() -> str | None:
         or os.getenv("ZULIPCHAT_AUTH_BASE_URL", "").strip()
     )
     return url.rstrip("/") or None
+
+
+# --- Identity allowlist ----------------------------------------------------
+
+
+def allowed_email_domains() -> frozenset[str]:
+    """Lower-cased email domains allowed to use the server (hosted mode).
+
+    From ZULIPCHAT_ALLOWED_EMAIL_DOMAINS (comma- or space-separated). A leading
+    ``@`` or ``.`` is stripped, so ``unfoldingword.org``, ``@unfoldingword.org``
+    and ``.unfoldingword.org`` are equivalent. Matching is exact per domain
+    (a listed ``unfoldingword.org`` does not implicitly allow subdomains).
+    """
+    raw = os.getenv("ZULIPCHAT_ALLOWED_EMAIL_DOMAINS", "")
+    out = set()
+    for item in raw.replace(",", " ").split():
+        domain = item.strip().lower().lstrip("@").lstrip(".")
+        if domain:
+            out.add(domain)
+    return frozenset(out)
+
+
+def allowed_emails() -> frozenset[str]:
+    """Explicit lower-cased email addresses allowed (e.g. external collaborators).
+
+    From ZULIPCHAT_ALLOWED_EMAILS (comma- or space-separated).
+    """
+    raw = os.getenv("ZULIPCHAT_ALLOWED_EMAILS", "")
+    out = {e.strip().lower() for e in raw.replace(",", " ").split()}
+    return frozenset(e for e in out if e)
+
+
+def identity_allowlist_configured() -> bool:
+    """True when at least one allowlist (domains or explicit emails) is set."""
+    return bool(allowed_email_domains() or allowed_emails())
+
+
+def is_identity_allowed(email: str) -> bool:
+    """Whether an authenticated OAuth identity may use the server.
+
+    Fail-closed: when no allowlist is configured, access is denied — set
+    ZULIPCHAT_ALLOWED_EMAIL_DOMAINS and/or ZULIPCHAT_ALLOWED_EMAILS to grant
+    access. With an allowlist set, an identity is allowed when its exact address
+    is in the email allowlist OR its domain is in the domain allowlist.
+    """
+    domains = allowed_email_domains()
+    emails = allowed_emails()
+    if not domains and not emails:
+        return False
+    addr = email.strip().lower()
+    if addr in emails:
+        return True
+    _local, _at, domain = addr.rpartition("@")
+    return bool(domain) and domain in domains

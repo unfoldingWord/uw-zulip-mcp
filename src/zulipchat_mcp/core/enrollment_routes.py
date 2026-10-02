@@ -18,7 +18,7 @@ from starlette.responses import HTMLResponse
 
 from ..config import get_config_manager
 from ..utils.logging import get_logger
-from . import hosted_runtime
+from . import hosted_config, hosted_runtime
 from .enrollment import (
     EnrollOutcome,
     enrollment_token_expiry,
@@ -95,6 +95,15 @@ def _used_link_page() -> HTMLResponse:
     )
 
 
+def _not_allowed_page() -> HTMLResponse:
+    return _page(
+        "Not authorized",
+        "<p class='err'>Your account is not authorized to use this server.</p>"
+        "<p>If you believe this is a mistake, contact your administrator.</p>",
+        status=403,
+    )
+
+
 def _expiry_notice(token: str) -> str:
     """A muted line stating when this link expires, or '' if not determinable."""
     expiry = enrollment_token_expiry(token)
@@ -142,6 +151,8 @@ async def enroll_get(request: Request) -> HTMLResponse:
     email = verify_enrollment_token(token)
     if not email:
         return _invalid_link_page()
+    if not hosted_config.is_identity_allowed(email):
+        return _not_allowed_page()
     if hosted_runtime.get_used_tokens().is_used(token):
         return _used_link_page()
     return _form_page(email, token)
@@ -154,6 +165,8 @@ async def enroll_post(request: Request) -> HTMLResponse:
     email = verify_enrollment_token(token)
     if not email:
         return _invalid_link_page()
+    if not hosted_config.is_identity_allowed(email):
+        return _not_allowed_page()
     if hosted_runtime.get_used_tokens().is_used(token):
         return _used_link_page()
 

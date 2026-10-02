@@ -8,6 +8,7 @@ from fastmcp.exceptions import ToolError
 from src.zulipchat_mcp.core.credential_resolver import (
     CredentialResolutionUnavailable,
     EnrollmentRequired,
+    IdentityNotAllowed,
 )
 from src.zulipchat_mcp.core.hosted_middleware import ZulipCredentialMiddleware
 from src.zulipchat_mcp.core.request_credentials import (
@@ -109,6 +110,17 @@ async def test_vault_unavailable_rejected(middleware, context):
     err = CredentialResolutionUnavailable("vault down")
     with patch(_RESOLVE, new=AsyncMock(side_effect=err)):
         with pytest.raises(ToolError, match="try again"):
+            await middleware.on_call_tool(context, call_next)
+    call_next.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_identity_not_allowed_rejected(middleware, context):
+    set_hosted_mode(True)
+    call_next = AsyncMock()
+    err = IdentityNotAllowed("stranger@gmail.com")
+    with patch(_RESOLVE, new=AsyncMock(side_effect=err)):
+        with pytest.raises(ToolError, match="not authorized"):
             await middleware.on_call_tool(context, call_next)
     call_next.assert_not_awaited()
 

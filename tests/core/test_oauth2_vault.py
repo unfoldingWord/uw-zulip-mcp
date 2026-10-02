@@ -30,6 +30,17 @@ def _reset_runtime():
     hosted_runtime.reset()
 
 
+@pytest.fixture(autouse=True)
+def _default_allowlist(monkeypatch):
+    """Allow the test domains by default (the gate is fail-closed).
+
+    Most tests use ``@x.org`` identities and do not care about the allowlist;
+    allowlist-specific tests override or clear these with monkeypatch.
+    """
+    monkeypatch.setenv("ZULIPCHAT_ALLOWED_EMAIL_DOMAINS", "x.org")
+    monkeypatch.delenv("ZULIPCHAT_ALLOWED_EMAILS", raising=False)
+
+
 # --- key cache -------------------------------------------------------------
 
 
@@ -255,6 +266,92 @@ async def test_resolver_no_identity_returns_none(monkeypatch):
     assert creds is None
 
 
+# --- identity allowlist ----------------------------------------------------
+
+
+def test_is_identity_allowed_denies_when_unset(monkeypatch):
+    from src.zulipchat_mcp.core import hosted_config
+
+    monkeypatch.delenv("ZULIPCHAT_ALLOWED_EMAIL_DOMAINS", raising=False)
+    monkeypatch.delenv("ZULIPCHAT_ALLOWED_EMAILS", raising=False)
+    assert hosted_config.identity_allowlist_configured() is False
+    # Fail-closed: nothing configured means nobody is allowed.
+    assert hosted_config.is_identity_allowed("anyone@anywhere.example") is False
+
+
+def test_is_identity_allowed_domain_and_email(monkeypatch):
+    from src.zulipchat_mcp.core import hosted_config
+
+    monkeypatch.setenv("ZULIPCHAT_ALLOWED_EMAIL_DOMAINS", "@UnfoldingWord.org, .b.org")
+    monkeypatch.setenv("ZULIPCHAT_ALLOWED_EMAILS", "Friend@Partner.ORG")
+    assert hosted_config.identity_allowlist_configured() is True
+    # domain match (case-insensitive, '@'/'.' prefixes normalized)
+    assert hosted_config.is_identity_allowed("Someone@unfoldingword.org") is True
+    assert hosted_config.is_identity_allowed("x@b.org") is True
+    # explicit email match (case-insensitive)
+    assert hosted_config.is_identity_allowed("friend@partner.org") is True
+    # not allowed
+    assert hosted_config.is_identity_allowed("stranger@gmail.com") is False
+    # subdomain is not implicitly allowed
+    assert hosted_config.is_identity_allowed("x@sub.unfoldingword.org") is False
+    # malformed (no domain) is not allowed
+    assert hosted_config.is_identity_allowed("nodomain") is False
+
+
+async def test_resolver_rejects_when_no_allowlist(monkeypatch):
+    # Fail-closed: with no allowlist configured, even a would-be valid user is
+    # rejected before any vault read.
+    monkeypatch.delenv("ZULIPCHAT_ALLOWED_EMAIL_DOMAINS", raising=False)
+    monkeypatch.delenv("ZULIPCHAT_ALLOWED_EMAILS", raising=False)
+    monkeypatch.setattr(credential_resolver, "oauth_email", lambda: "u@x.org")
+    store = _FakeStore(keys={"u@x.org": KEY})
+    hosted_runtime.set_key_cache(SlidingKeyCache(ttl_seconds=100))
+    hosted_runtime.set_secret_store(store)
+
+    with pytest.raises(credential_resolver.IdentityNotAllowed):
+        await credential_resolver.resolve_request_credentials()
+    assert store.get_calls == 0
+
+
+async def test_resolver_rejects_identity_not_allowed(monkeypatch):
+    monkeypatch.setenv("ZULIPCHAT_ALLOWED_EMAIL_DOMAINS", "unfoldingword.org")
+    monkeypatch.delenv("ZULIPCHAT_ALLOWED_EMAILS", raising=False)
+    monkeypatch.setattr(
+        credential_resolver, "oauth_email", lambda: "stranger@gmail.com"
+    )
+    store = _FakeStore()
+    hosted_runtime.set_key_cache(SlidingKeyCache(ttl_seconds=100))
+    hosted_runtime.set_secret_store(store)
+
+    with pytest.raises(credential_resolver.IdentityNotAllowed) as ei:
+        await credential_resolver.resolve_request_credentials()
+    assert ei.value.email == "stranger@gmail.com"
+    assert store.get_calls == 0  # gate runs before any vault read
+
+
+async def test_resolver_allows_domain_member(monkeypatch):
+    monkeypatch.setenv("ZULIPCHAT_ALLOWED_EMAIL_DOMAINS", "unfoldingword.org")
+    monkeypatch.setattr(
+        credential_resolver, "oauth_email", lambda: "u@unfoldingword.org"
+    )
+    hosted_runtime.set_key_cache(SlidingKeyCache(ttl_seconds=100))
+    hosted_runtime.set_secret_store(_FakeStore(keys={"u@unfoldingword.org": KEY}))
+    creds = await credential_resolver.resolve_request_credentials()
+    assert creds is not None and creds.api_key == KEY
+
+
+async def test_resolver_allows_explicit_email(monkeypatch):
+    monkeypatch.delenv("ZULIPCHAT_ALLOWED_EMAIL_DOMAINS", raising=False)
+    monkeypatch.setenv("ZULIPCHAT_ALLOWED_EMAILS", "friend@partner.org")
+    monkeypatch.setattr(
+        credential_resolver, "oauth_email", lambda: "friend@partner.org"
+    )
+    hosted_runtime.set_key_cache(SlidingKeyCache(ttl_seconds=100))
+    hosted_runtime.set_secret_store(_FakeStore(keys={"friend@partner.org": KEY}))
+    creds = await credential_resolver.resolve_request_credentials()
+    assert creds is not None and creds.api_key == KEY
+
+
 async def test_resolver_isolates_two_users(monkeypatch):
     cache = SlidingKeyCache(ttl_seconds=100)
     store = _FakeStore(keys={"a@x.org": "a" * 32, "b@x.org": "b" * 32})
@@ -470,6 +567,19 @@ def test_enroll_post_invalid_token_rejected(monkeypatch):
         "/enroll", data={"token": "bad", "api_key": "a" * 32}
     )
     assert resp.status_code == 400
+
+
+def test_enroll_get_not_allowed_identity(monkeypatch):
+    from starlette.testclient import TestClient
+
+    monkeypatch.setenv("ZULIPCHAT_ENROLL_SECRET", SECRET)
+    monkeypatch.setenv("ZULIPCHAT_ALLOWED_EMAIL_DOMAINS", "unfoldingword.org")
+    monkeypatch.delenv("ZULIPCHAT_ALLOWED_EMAILS", raising=False)
+    # Valid, unexpired token but the identity is not on the allowlist.
+    tok = mint_enrollment_token("stranger@gmail.com")
+    resp = TestClient(_enroll_app()).get(f"/enroll?token={tok}")
+    assert resp.status_code == 403
+    assert "not authorized" in resp.text.lower()
 
 
 # --- single-use links ------------------------------------------------------

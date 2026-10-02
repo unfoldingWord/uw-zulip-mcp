@@ -267,6 +267,13 @@ def main() -> None:
             "google/oidc) or front with an authenticating proxy."
         )
 
+    if hosted and not hosted_config.identity_allowlist_configured():
+        logger.warning(
+            "No identity allowlist set - ALL authenticated identities will be "
+            "REJECTED (fail-closed). Set ZULIPCHAT_ALLOWED_EMAIL_DOMAINS and/or "
+            "ZULIPCHAT_ALLOWED_EMAILS to grant access."
+        )
+
     # Initialize MCP with modern configuration
     mcp = FastMCP(
         "ZulipChat MCP",
@@ -433,6 +440,23 @@ def main() -> None:
             lines.append(
                 f"  Server auth:     {os.getenv('ZULIPCHAT_AUTH_MODE', 'none')}"
             )
+            if hosted_config.identity_allowlist_configured():
+                domains = sorted(hosted_config.allowed_email_domains())
+                n_emails = len(hosted_config.allowed_emails())
+                desc = ", ".join("@" + d for d in domains)
+                if n_emails:
+                    extra = f"{n_emails} address(es)"
+                    desc = f"{desc} + {extra}" if desc else extra
+                lines.append(f"  Identity allow:  {desc}")
+            else:
+                lines.append("  Identity allow:  NONE (no allowlist set)")
+                lines.append("")
+                lines.append(
+                    "  *** WARNING: fail-closed - ALL identities rejected. ***"
+                )
+                lines.append(
+                    "  *** Set ZULIPCHAT_ALLOWED_EMAIL_DOMAINS / _EMAILS.    ***"
+                )
         lines.append("")
         lines.append("=" * 60)
         lines.append("")

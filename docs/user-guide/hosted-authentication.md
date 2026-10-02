@@ -40,6 +40,14 @@ from the vault (cached in memory) automatically.
 - **Identity binding:** a submitted key is stored only if Zulip confirms it and
   its Zulip email matches the OAuth email, so a user cannot bind someone else's
   account.
+- **Identity allowlist (fail-closed):** access requires `ZULIPCHAT_ALLOWED_EMAIL_DOMAINS`
+  and/or `ZULIPCHAT_ALLOWED_EMAILS` — list your org's domain plus any named
+  external collaborators. With neither set, every authenticated identity is
+  rejected (so you must configure it). Non-allowed identities are turned away
+  **before** any vault access, on both the tool path and the enrollment page,
+  so they cannot even drive a vault lookup. This is defense in depth — also
+  restrict the OAuth app itself (e.g. a Google Workspace internal app) so
+  non-org accounts cannot complete login at all.
 - **Zulip site: pinned server-side** (`ZULIP_SITE`). Clients cannot point the
   server at another host.
 - **Org bot key: server-side env/zuliprc**, unchanged, for the agent control
@@ -86,6 +94,26 @@ in their OAuth token. For `google` and `oidc`, scopes default to
 token has no email claim, tool calls fail with "no authenticated identity" and
 the server logs the claims it did receive. For `jwt` mode, ensure your IdP puts
 `email` in the JWT.
+
+### Restricting who may use the server
+
+Authentication (OAuth) decides who can *reach* the server; by itself it may
+admit any account the provider accepts (e.g. any Google account if the OAuth app
+is not restricted to your Workspace). Narrow this with an identity allowlist:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `ZULIPCHAT_ALLOWED_EMAIL_DOMAINS` | — | Comma/space-separated domains allowed (e.g. `unfoldingword.org`). A leading `@` or `.` is ignored; matching is exact per domain (no implicit subdomains) |
+| `ZULIPCHAT_ALLOWED_EMAILS` | — | Comma/space-separated explicit addresses allowed in addition to the domains |
+
+An identity is allowed when its exact address is in `ZULIPCHAT_ALLOWED_EMAILS`
+**or** its domain is in `ZULIPCHAT_ALLOWED_EMAIL_DOMAINS`. Rejected
+identities are turned away **before any vault lookup**, on both the tool path
+("not authorized to use this server") and the enrollment page (HTTP 403). The
+gate is **fail-closed**: if **both** variables are unset, every authenticated
+identity is **rejected**, and the server logs a warning at startup — you must
+set at least one for the server to be usable. This is in addition to, not a
+replacement for, restricting the OAuth app itself.
 
 ## OpenBao / Vault
 
