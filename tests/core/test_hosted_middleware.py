@@ -20,7 +20,9 @@ from src.zulipchat_mcp.core.request_credentials import (
 VALID_KEY = "a" * 32
 _RESOLVE = "src.zulipchat_mcp.core.hosted_middleware.resolve_request_credentials"
 _RUNTIME = "src.zulipchat_mcp.core.hosted_middleware.hosted_runtime"
-_FLAG = "src.zulipchat_mcp.core.hosted_middleware.hosted_config.reenroll_on_auth_failure"
+_FLAG = (
+    "src.zulipchat_mcp.core.hosted_middleware.hosted_config.reenroll_on_auth_failure"
+)
 
 
 @pytest.fixture(autouse=True)
