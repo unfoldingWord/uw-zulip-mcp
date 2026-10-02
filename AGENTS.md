@@ -179,9 +179,9 @@ If a session is not bound, these skills stop and explain rather than calling MCP
 ## Release Process
 
 Full runbook: [RELEASING.md](RELEASING.md). A release is a git tag `vX.Y.Z` on
-`main`; the tag triggers the Docker workflow to publish `X.Y.Z` / `X.Y` / `stable`
-to Docker Hub. `develop` publishes `latest` automatically. This fork does not
-publish to PyPI.
+`main`; the tag triggers the Docker workflow to publish exactly `X.Y.Z` and
+`stable` to Docker Hub. `develop` publishes `latest` automatically (main pushes
+do not build). This fork does not publish to PyPI.
 
 ```bash
 uv run python scripts/bump_version.py X.Y.Z   # bump scripted version locations
