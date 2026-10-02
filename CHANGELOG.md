@@ -9,6 +9,9 @@ All notable changes to ZulipChat MCP are documented in this file.
 - **Single-use enrollment links** — an `/enroll` link is now consumed once a key is successfully saved; opening or submitting it again shows a "link already used" page. Failed submissions do not consume the link, so a user can still retry a wrong key within the link's lifetime. The consumed-link record is in-memory per replica (like the cool-off counters) and bounded by the token's own expiry.
 - **Enrollment page shows the link expiry** — the form now states when the link expires (e.g. "expires at 11:51 UTC (in about 15 minutes)"), computed from the token's actual expiry.
 
+### Fixed
+- **Static browser-tab title on the enrollment pages** — the `<title>` is now a constant ("ZulipChat MCP — Enrollment") instead of changing per page state; the visible per-state heading is unchanged.
+
 ### Changed
 - The AppRole OpenBao policy now also needs `delete` on the KV v2 **metadata** path (`<mount>/metadata/<path>/*`) so a rejected key can be purged on rotation. Not required when `ZULIPCHAT_REENROLL_ON_AUTH_FAILURE=false`.
 

@@ -40,6 +40,10 @@ _SECURITY_HEADERS = {
     "X-Frame-Options": "DENY",
 }
 
+# Static browser-tab title for every enrollment page. The per-page `title`
+# argument is used only for the visible <h1> heading.
+_PAGE_TITLE = "ZulipChat MCP — Enrollment"
+
 
 def _page(title: str, body: str, *, status: int = 200) -> HTMLResponse:
     doc = f"""<!doctype html>
@@ -47,7 +51,7 @@ def _page(title: str, body: str, *, status: int = 200) -> HTMLResponse:
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{html.escape(title)}</title>
+<title>{html.escape(_PAGE_TITLE)}</title>
 <style>
   body {{ font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
          color: {_TECH}; background: #f5f7f9; margin: 0; padding: 2rem; }}

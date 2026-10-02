@@ -408,6 +408,24 @@ def test_enroll_get_valid_token_shows_form(monkeypatch):
     assert resp.headers.get("Cache-Control") == "no-store"
 
 
+def test_enroll_page_title_is_static(monkeypatch):
+    from starlette.testclient import TestClient
+
+    monkeypatch.setenv("ZULIPCHAT_ENROLL_SECRET", SECRET)
+    client = TestClient(_enroll_app())
+    tok = mint_enrollment_token("u@x.org")
+
+    form = client.get(f"/enroll?token={tok}").text
+    invalid = client.get("/enroll?token=bad").text
+
+    # Same <title> on every page...
+    assert "<title>ZulipChat MCP — Enrollment</title>" in form
+    assert "<title>ZulipChat MCP — Enrollment</title>" in invalid
+    # ...while the visible <h1> heading still differs per state.
+    assert "<h1>Add your Zulip API key</h1>" in form
+    assert "<h1>Link expired or invalid</h1>" in invalid
+
+
 def test_enroll_form_shows_expiry(monkeypatch):
     from starlette.testclient import TestClient
 
