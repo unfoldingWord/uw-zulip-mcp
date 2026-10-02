@@ -193,21 +193,33 @@ async def manage_scheduled_message(
                 "error": "type, to, content, and scheduled_delivery_timestamp required for create",
             }
         return await create_scheduled_message(
-            type=type, to=to, content=content,
+            type=type,
+            to=to,
+            content=content,
             scheduled_delivery_timestamp=scheduled_delivery_timestamp,
-            topic=topic, read_by_sender=read_by_sender,
+            topic=topic,
+            read_by_sender=read_by_sender,
         )
     elif action == "update":
         if not scheduled_message_id:
-            return {"status": "error", "error": "scheduled_message_id required for update"}
+            return {
+                "status": "error",
+                "error": "scheduled_message_id required for update",
+            }
         return await update_scheduled_message(
             scheduled_message_id=scheduled_message_id,
-            type=type, to=to, content=content,
-            topic=topic, scheduled_delivery_timestamp=scheduled_delivery_timestamp,
+            type=type,
+            to=to,
+            content=content,
+            topic=topic,
+            scheduled_delivery_timestamp=scheduled_delivery_timestamp,
         )
     elif action == "delete":
         if not scheduled_message_id:
-            return {"status": "error", "error": "scheduled_message_id required for delete"}
+            return {
+                "status": "error",
+                "error": "scheduled_message_id required for delete",
+            }
         return await delete_scheduled_message(scheduled_message_id)
     else:
         return {"status": "error", "error": f"Unknown action: {action}"}

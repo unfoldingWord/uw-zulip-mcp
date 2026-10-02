@@ -91,8 +91,10 @@ class TestConfigManager:
     def test_has_bot_credentials(self):
         """Test checking bot credentials."""
         # File based — mock both existence and field validation
-        with patch("os.path.exists", return_value=True), \
-             patch.object(ConfigManager, "_validate_bot_config_file", return_value=True):
+        with (
+            patch("os.path.exists", return_value=True),
+            patch.object(ConfigManager, "_validate_bot_config_file", return_value=True),
+        ):
             manager = ConfigManager(bot_config_file="/bot/path")
             assert manager.has_bot_credentials() is True
 
@@ -115,8 +117,10 @@ class TestConfigManager:
         assert cfg["config_file"] == "/user/path"
 
         # Bot config
-        with patch("os.path.exists", return_value=True), \
-             patch.object(ConfigManager, "_validate_bot_config_file", return_value=True):
+        with (
+            patch("os.path.exists", return_value=True),
+            patch.object(ConfigManager, "_validate_bot_config_file", return_value=True),
+        ):
             manager = ConfigManager(
                 config_file="/user/path", bot_config_file="/bot/path"
             )

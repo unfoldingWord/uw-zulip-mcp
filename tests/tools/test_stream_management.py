@@ -17,7 +17,9 @@ class TestGetStreams:
     @pytest.fixture
     def mock_deps(self):
         """Patch get_client to return mock client."""
-        with patch("src.zulipchat_mcp.tools.stream_management.get_client") as mock_get_client:
+        with patch(
+            "src.zulipchat_mcp.tools.stream_management.get_client"
+        ) as mock_get_client:
             client = MagicMock()
             mock_get_client.return_value = client
             yield client
@@ -124,7 +126,9 @@ class TestGetStreamInfo:
     @pytest.fixture
     def mock_deps(self):
         """Patch get_client to return mock client."""
-        with patch("src.zulipchat_mcp.tools.stream_management.get_client") as mock_get_client:
+        with patch(
+            "src.zulipchat_mcp.tools.stream_management.get_client"
+        ) as mock_get_client:
             client = MagicMock()
             mock_get_client.return_value = client
             yield client

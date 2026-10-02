@@ -10,7 +10,7 @@ Tools are registered based on `--read-only` and `--disable-agents` flags:
 | Write tools | Yes | **No** | Yes |
 | Agent tools | Yes | **No** | **No** |
 
-## Core mode (19 tools default, 9 in read-only)
+## Core mode (20 tools default, 9 in read-only)
 
 ### Always registered (read/search — 9)
 
@@ -32,10 +32,11 @@ Tools are registered based on `--read-only` and `--disable-agents` flags:
 - `switch_identity`
 - `manage_message_flags`
 
-### Agent tools (skipped when agents disabled or read-only — 5)
+### Agent tools (skipped when agents disabled or read-only — 6)
 
 - `teleport_chat`
 - `register_agent`
+- `ensure_agent_session`
 - `agent_message`
 - `request_user_input`
 - `wait_for_response` (configurable timeout via `ZULIPCHAT_AGENT_TIMEOUT`)
@@ -61,10 +62,11 @@ Tools are registered based on `--read-only` and `--disable-agents` flags:
 - `execute_chain`
 - `update_message_flags_for_narrow`
 
-### Agent extensions (skipped when agents disabled or read-only — 5)
+### Agent extensions (skipped when agents disabled or read-only — 6)
 
-- `send_agent_status`, `manage_task`, `list_instances`
-- `afk_mode`, `poll_agent_events`
+- `send_agent_status`, `manage_task`
+- `list_sessions`, `list_instances` (compatibility alias)
+- `close_agent_session`, `poll_agent_events`
 
 ## Channel filter interaction
 

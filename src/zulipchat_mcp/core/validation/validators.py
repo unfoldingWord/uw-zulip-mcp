@@ -298,7 +298,9 @@ class ParameterValidator:
                     "level": (
                         "basic"
                         if p.basic_param
-                        else "advanced" if p.advanced_param else "expert"
+                        else "advanced"
+                        if p.advanced_param
+                        else "expert"
                     ),
                 }
                 for p in params_to_show
@@ -402,7 +404,9 @@ class ParameterValidator:
             "level": (
                 "basic"
                 if param_schema.basic_param
-                else "advanced" if param_schema.advanced_param else "expert"
+                else "advanced"
+                if param_schema.advanced_param
+                else "expert"
             ),
         }
 

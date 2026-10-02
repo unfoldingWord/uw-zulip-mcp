@@ -12,7 +12,7 @@ What changed and why?
 
 - [ ] `uv run pytest -q`
 - [ ] `uv run ruff check .`
-- [ ] `uv run black --check .`
+- [ ] `uv run ruff format --check .`
 - [ ] `uv run mypy src`
 
 ## Notes

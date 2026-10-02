@@ -1,16 +1,18 @@
-"""Tests for tools/agents.py."""
+"""Tests for the session-oriented agent tools."""
 
-from unittest.mock import ANY, MagicMock, patch
+from datetime import datetime, timezone
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from src.zulipchat_mcp.tools.agents import (
     agent_message,
+    close_agent_session,
     complete_task,
-    disable_afk_mode,
-    enable_afk_mode,
-    get_afk_status,
+    ensure_agent_session,
     list_instances,
+    list_sessions,
+    manage_task,
     poll_agent_events,
     register_agent,
     request_user_input,
@@ -22,12 +24,66 @@ from src.zulipchat_mcp.tools.agents import (
 
 
 class TestAgentTools:
-    """Tests for agent tools."""
+    """Tests for session-aware agent tools."""
 
     @pytest.fixture(autouse=True)
     def mock_ensure_listener(self):
         with patch("src.zulipchat_mcp.tools.agents.ensure_listener"):
             yield
+
+    @pytest.fixture
+    def mock_coordinator(self):
+        coordinator = MagicMock()
+        coordinator.register_agent.return_value = {
+            "status": "success",
+            "agent": {
+                "agent_id": "agent-1",
+                "agent_name": "claude",
+                "agent_type": "claude-code",
+                "owner_email": "owner@example.com",
+                "stream_name": "Agents-Channel",
+                "topic_prefix": "Agents/Session",
+            },
+        }
+        coordinator.ensure_session.return_value = {
+            "status": "success",
+            "created": True,
+            "session": {
+                "session_id": "sess-1",
+                "agent_id": "agent-1",
+                "external_session_id": "cc-123",
+                "stream_name": "Agents-Channel",
+                "topic_name": "Agents/Session/project/claude/cc-123",
+                "owner_email": "owner@example.com",
+                "project_name": "project",
+                "status": "active",
+            },
+        }
+        coordinator.send_session_message.return_value = {
+            "status": "success",
+            "session_id": "sess-1",
+            "message_id": 100,
+            "category": "message",
+        }
+        coordinator.create_request.return_value = {
+            "status": "success",
+            "request_id": "req-1",
+            "session_id": "sess-1",
+            "message_id": 101,
+        }
+        coordinator.wait_for_request_async = AsyncMock(
+            return_value={
+                "status": "success",
+                "request_status": "answered",
+                "response": "approve",
+                "responded_at": "2026-03-21T10:00:00+00:00",
+            }
+        )
+        with patch(
+            "src.zulipchat_mcp.tools.agents._get_coordinator",
+            return_value=coordinator,
+        ):
+            yield coordinator
 
     @pytest.fixture
     def mock_db(self):
@@ -36,154 +92,130 @@ class TestAgentTools:
             mock_db_cls.return_value = db_instance
             yield db_instance
 
-    @pytest.fixture
-    def mock_client(self):
-        client = MagicMock()
-        client.get_streams.return_value = {
-            "result": "success",
-            "streams": [{"name": "Agents-Channel"}],
-        }
-        client.send_message.return_value = {"result": "success", "id": 100}
-
-        with patch(
-            "src.zulipchat_mcp.tools.agents._get_client_bot", return_value=client
-        ):
-            yield client
-
-    @pytest.fixture
-    def mock_tracker(self):
-        tracker = MagicMock()
-        tracker.format_agent_message.return_value = {
-            "status": "ready",
-            "stream": "Agents-Channel",
-            "content": "msg",
-            "topic": "topic",
-            "response_id": "resp_id",
-        }
-        with patch("src.zulipchat_mcp.tools.agents._tracker", tracker):
-            yield tracker
-
-    def test_register_agent(self, mock_db, mock_client):
-        """Test register_agent."""
-        result = register_agent("test-agent")
+    def test_register_agent(self, mock_coordinator):
+        result = register_agent(agent_name="claude", agent_type="claude-code")
         assert result["status"] == "success"
-        assert result["agent_type"] == "test-agent"
-        mock_db.execute.assert_called()  # Should call execute multiple times
+        assert result["agent_id"] == "agent-1"
+        assert result["stream"] == "Agents-Channel"
+        mock_coordinator.register_agent.assert_called_once()
 
-    def test_register_agent_stream_fallback(self, mock_db, mock_client):
-        """Test register_agent uses fallback stream when preferred not available."""
-        # No Agents-Channel, but sandbox exists
-        mock_client.get_streams.return_value = {
-            "result": "success",
-            "streams": [{"name": "sandbox", "invite_only": False}],
-        }
-        # Reset cached stream to force re-discovery
-        import src.zulipchat_mcp.tools.agents as agents_module
-
-        agents_module._agent_stream = None
-
-        result = register_agent()
+    def test_ensure_agent_session(self, mock_coordinator):
+        result = ensure_agent_session(
+            "agent-1",
+            external_session_id="cc-123",
+            project_dir="/tmp/project",
+        )
         assert result["status"] == "success"
-        assert result["stream"] == "sandbox"  # Falls back to available stream
+        assert result["session_id"] == "sess-1"
+        assert result["created"] is True
+        mock_coordinator.ensure_session.assert_called_once()
 
-    def test_agent_message_afk_enabled(self, mock_db, mock_client, mock_tracker):
-        """Test agent_message when AFK is enabled."""
-        mock_db.get_afk_state.return_value = {"is_afk": True}
-
-        result = agent_message("hello")
-
+    def test_agent_message(self, mock_coordinator):
+        result = agent_message("sess-1", "hello", category="started")
         assert result["status"] == "success"
-        mock_client.send_message.assert_called()
+        mock_coordinator.send_session_message.assert_called_once_with(
+            session_id="sess-1",
+            content="hello",
+            category="started",
+            request_id=None,
+            metadata=None,
+        )
 
-    def test_agent_message_afk_disabled(self, mock_db, mock_client, mock_tracker):
-        """Test agent_message skipped when AFK is disabled."""
-        mock_db.get_afk_state.return_value = {"is_afk": False}
-
-        # Override dev notify check? It checks env.
-        with patch.dict("os.environ", {"ZULIP_DEV_NOTIFY": "0"}):
-            result = agent_message("hello")
-            assert result["status"] == "skipped"
-            mock_client.send_message.assert_not_called()
-
-    def test_wait_for_response_success(self, mock_db):
-        """Test wait_for_response success."""
-        mock_db.get_input_request.return_value = {
-            "status": "answered",
-            "response": "yes",
-            "responded_at": "2023-01-01",
-        }
-
-        result = wait_for_response("req_id")
+    @pytest.mark.asyncio
+    async def test_wait_for_response_success(self, mock_coordinator):
+        result = await wait_for_response("req-1", timeout_seconds=5)
         assert result["status"] == "success"
-        assert result["response"] == "yes"
+        assert result["response"] == "approve"
+        mock_coordinator.wait_for_request_async.assert_called_once_with(
+            "req-1", timeout_seconds=5
+        )
 
     def test_send_agent_status(self, mock_db):
-        """Test send_agent_status."""
-        result = send_agent_status("agent", "working")
+        mock_db.get_agent_profile.return_value = {"agent_type": "claude-code"}
+        result = send_agent_status("agent-1", "working")
         assert result["status"] == "success"
-        mock_db.create_agent_status.assert_called()
+        mock_db.create_agent_status.assert_called_once()
 
-    def test_request_user_input(self, mock_db, mock_client):
-        """Test request_user_input."""
-        mock_db.get_afk_state.return_value = {"is_afk": True}
-        mock_db.get_agent_instance.return_value = {"project_dir": "/tmp"}
-        mock_db.query_one.return_value = [None]  # No metadata
-
-        result = request_user_input("agent_id", "Q?")
+    def test_request_user_input(self, mock_coordinator):
+        result = request_user_input(
+            "sess-1",
+            "Deploy now?",
+            options=["approve", "deny"],
+            request_type="approval",
+        )
         assert result["status"] == "success"
-        mock_db.create_input_request.assert_called()
-        mock_client.send_message.assert_called()
+        assert result["request_id"] == "req-1"
+        mock_coordinator.create_request.assert_called_once()
 
     def test_start_task(self, mock_db):
-        """Test start_task."""
-        result = start_task("agent", "task")
+        result = start_task("agent-1", "Task")
         assert result["status"] == "success"
         mock_db.execute.assert_called()
 
     def test_update_task_progress(self, mock_db):
-        """Test update_task_progress."""
-        result = update_task_progress("tid", 50)
+        result = update_task_progress("task-1", 50, "working")
         assert result["status"] == "success"
         mock_db.execute.assert_called()
 
     def test_complete_task(self, mock_db):
-        """Test complete_task."""
-        result = complete_task("tid")
+        result = complete_task("task-1")
         assert result["status"] == "success"
         mock_db.execute.assert_called()
 
-    def test_list_instances(self, mock_db):
-        """Test list_instances."""
-        mock_db.query.return_value = [
-            ("inst1", "ag1", "type", "sess", "dir", "host", None)
+    def test_list_sessions(self, mock_db):
+        mock_db.list_agent_sessions.return_value = [
+            {
+                "session_id": "sess-1",
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
+                "ended_at": None,
+            }
         ]
+        result = list_sessions()
+        assert result["status"] == "success"
+        assert len(result["sessions"]) == 1
+
+    def test_list_instances_alias(self, mock_db):
+        mock_db.list_agent_sessions.return_value = [{"session_id": "sess-1"}]
         result = list_instances()
         assert result["status"] == "success"
-        assert len(result["instances"]) == 1
+        assert result["instances"][0]["session_id"] == "sess-1"
 
-    def test_afk_mode(self, mock_db):
-        """Test enable/disable/get AFK."""
-        # Enable
-        res = enable_afk_mode()
-        assert res["status"] == "success"
-        mock_db.set_afk_state.assert_called_with(enabled=True, reason=ANY, hours=8)
-
-        # Disable
-        res = disable_afk_mode()
-        assert res["status"] == "success"
-        mock_db.set_afk_state.assert_called_with(enabled=False, reason="", hours=0)
-
-        # Get
-        mock_db.get_afk_state.return_value = {"is_afk": True}
-        res = get_afk_status()
-        assert res["status"] == "success"
-        assert res["afk_state"]["enabled"] is True
+    def test_close_agent_session(self, mock_db, mock_coordinator):
+        mock_db.get_agent_session.return_value = {
+            "session_id": "sess-1",
+            "agent_id": "agent-1",
+            "stream_name": "Agents-Channel",
+            "topic_name": "Agents/Session/project/claude/cc-123",
+        }
+        result = close_agent_session("sess-1", summary="Done")
+        assert result["status"] == "success"
+        mock_db.update_agent_session.assert_called_once()
+        mock_coordinator.send_session_message.assert_called_once()
 
     def test_poll_agent_events(self, mock_db):
-        """Test poll_agent_events."""
-        mock_db.get_unacked_events.return_value = [{"id": 1, "content": "msg"}]
-
-        result = poll_agent_events()
+        mock_db.get_unacked_session_events.return_value = [
+            {"id": "evt-1", "content": "hi"}
+        ]
+        result = poll_agent_events(session_id="sess-1")
         assert result["status"] == "success"
-        assert len(result["events"]) == 1
-        mock_db.ack_events.assert_called_with([1])
+        assert result["count"] == 1
+        mock_db.ack_session_events.assert_called_once_with(["evt-1"])
+
+    def test_manage_task_dispatch(self):
+        with patch("src.zulipchat_mcp.tools.agents.start_task") as mock_start:
+            mock_start.return_value = {"status": "success"}
+            result = manage_task(action="start", agent_id="agent-1", name="Task")
+            assert result["status"] == "success"
+
+        with patch(
+            "src.zulipchat_mcp.tools.agents.update_task_progress"
+        ) as mock_update:
+            mock_update.return_value = {"status": "success"}
+            result = manage_task(action="update", task_id="task-1", progress=25)
+            assert result["status"] == "success"
+
+        with patch("src.zulipchat_mcp.tools.agents.complete_task") as mock_complete:
+            mock_complete.return_value = {"status": "success"}
+            result = manage_task(action="complete", task_id="task-1")
+            assert result["status"] == "success"

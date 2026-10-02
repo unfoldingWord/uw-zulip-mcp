@@ -78,8 +78,10 @@ class TestAuditLogging:
         try:
             with caplog.at_level(logging.DEBUG, logger="zulipchat_mcp.audit"):
                 log_channel_access(
-                    "30 Infrastructure", "read",
-                    identity="user", message_count=42,
+                    "30 Infrastructure",
+                    "read",
+                    identity="user",
+                    message_count=42,
                 )
             records = [r for r in caplog.records if "30 Infrastructure" in r.message]
             assert len(records) == 1
@@ -134,7 +136,7 @@ class TestAuditLogging:
         original = audit_mod._AUDIT_ENABLED
         audit_mod._AUDIT_ENABLED = True
         try:
-            evil_query = "search\n{\"injected\": true}"
+            evil_query = 'search\n{"injected": true}'
             with caplog.at_level(logging.DEBUG, logger="zulipchat_mcp.audit"):
                 log_tool_invocation("search_messages", query=evil_query)
             records = [r for r in caplog.records if "search_messages" in r.message]
@@ -152,6 +154,7 @@ class TestAuditLogging:
         original_handlers = list(audit_mod.audit_logger.handlers)
         try:
             import os
+
             os.environ["ZULIPCHAT_AUDIT_ENABLED"] = "true"
             # Don't set ZULIPCHAT_AUDIT_FILE to avoid filesystem side effects
 
@@ -161,7 +164,8 @@ class TestAuditLogging:
 
             # No file handlers should be added (no AUDIT_FILE set)
             file_handlers = [
-                h for h in audit_mod.audit_logger.handlers
+                h
+                for h in audit_mod.audit_logger.handlers
                 if isinstance(h, logging.FileHandler)
             ]
             assert len(file_handlers) == 0

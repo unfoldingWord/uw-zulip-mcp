@@ -8,6 +8,12 @@ Each package includes:
 - Client-specific config template(s)
 - Optional install helper script
 
+Some packages also include richer scaffolds. Claude Code now ships:
+
+- standalone `.claude/` assets with hooks, skills, and subagents
+- a shareable Claude plugin template
+- `zulipchat-mcp-integrate export --client claude-code` for safe local export
+
 ## Clients
 
 - `claude-code/`

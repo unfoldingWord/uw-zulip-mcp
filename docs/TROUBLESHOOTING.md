@@ -16,7 +16,7 @@
 - Re-test by running setup wizard validation:
 
 ```bash
-uvx zulipchat-mcp-setup
+uvx --from zulipchat-mcp zulipchat-mcp-setup
 ```
 
 ## Bot identity cannot be selected
@@ -27,12 +27,24 @@ uvx zulipchat-mcp-setup
 ## Tool not found in client
 
 - You are likely in core mode.
-- Start with `--extended-tools` (or `ZULIPCHAT_EXTENDED_TOOLS=1`) for full tool set.
+- Start with `--extended-tools` (or `ZULIPCHAT_EXTENDED_TOOLS=true`) for full tool set.
 
-## `agent_message` / `request_user_input` returns skipped
+## `request_user_input` or approvals never resolve
 
-- AFK gating is active.
-- Enable AFK mode (`afk_mode(action="enable")`) or set `ZULIP_DEV_NOTIFY=1` for development.
+- Ensure the message listener is running. It lazy-starts on the first request-wait or event-poll call.
+- Confirm the reply happened in the bound session topic, not a different topic or DM.
+- Confirm the reply came from the configured owner account.
+
+## Claude hook bridge does nothing
+
+- Make sure you installed the hook entrypoint: `zulipchat-mcp-hook`.
+- Confirm Claude Code hooks are invoking the bridge with the same Zulip config files as the MCP server.
+- For `SessionEnd` hooks, increase `CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS` if you need more than Claude Code’s short default timeout.
+
+## Session messages say "Not authorized"
+
+- Owner policy is per session topic. Only the configured owner email can steer or approve a bound session by default.
+- If the bot is in a broader channel, unauthorized users can still mention it normally outside a bound session topic; the restriction applies to the bound control topic.
 
 ## Event queue errors
 
@@ -49,7 +61,7 @@ uvx zulipchat-mcp-setup
 The wizard is interactive. Run it directly in a terminal (no piped stdin):
 
 ```bash
-uvx zulipchat-mcp-setup
+uvx --from zulipchat-mcp zulipchat-mcp-setup
 ```
 
 ## Channel filter configuration error at startup

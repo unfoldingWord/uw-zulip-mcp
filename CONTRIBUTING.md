@@ -23,11 +23,23 @@ Run before opening a PR:
 ```bash
 uv run pytest -q
 uv run ruff check .
-uv run black .
+uv run ruff format --check .
 uv run mypy src
 ```
 
 Coverage gate is `60%`.
+
+If your PR touches packaging, dependencies, FastMCP server construction, tool
+registration, background tasks, lifespan handling, or CLI startup, also run:
+
+```bash
+uv build
+scripts/pre_release_smoke.sh --version X.Y.Z --allow-dirty
+```
+
+Use the package version from `pyproject.toml` for `X.Y.Z`. This smoke starts the
+MCP stdio server with fake credentials, lists tools, and calls `server_info`; it
+does not contact a real Zulip server.
 
 ## Project layout
 
@@ -54,6 +66,7 @@ src/zulipchat_mcp/
 
 - [ ] Problem and solution are clearly stated
 - [ ] Tests and checks pass locally
+- [ ] Startup or packaging changes include MCP stdio smoke results
 - [ ] Docs are updated when needed
 - [ ] No credentials or private data in commits
 

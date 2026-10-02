@@ -4,6 +4,57 @@ All notable changes to ZulipChat MCP are documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **OAuth2-only hosted mode with a vault-backed key store** — clients authenticate with OAuth only; the server derives the user's email from the validated OAuth token and resolves that user's Zulip API key from an OpenBao/Vault KV v2 store, cached in memory with a sliding one-day inactivity TTL. On first contact the user is sent to a signed `/enroll` web page (served by the same server) to add their key once; the key is validated against Zulip and stored only if its Zulip email matches the OAuth identity. Wrong keys are rejected and never stored, with a configurable cool-off after repeated failures. New config: `OPENBAO_*`, `ZULIPCHAT_ENROLL_*`, `ZULIPCHAT_KEY_CACHE_TTL_SECONDS`, `ZULIPCHAT_PUBLIC_URL`. Per-identity cache scoping and audit-by-email are preserved, so users stay isolated.
+- **Hosted multi-user mode with client-side credential injection** — `--hosted` / `ZULIPCHAT_HOSTED=1`. The Zulip site stays pinned server-side (`ZULIP_SITE`) so clients cannot redirect credentials to another host. Stream/user/message caches are scoped per identity so one user's visible data is never served to another. Audit events are stamped with the requesting user's email.
+- **OAuth 2.1 for the user → MCP server hop** — env-driven auth provider (`ZULIPCHAT_AUTH_MODE`: `google`, `oidc`, `jwt`, or `static` for dev), powered by FastMCP's auth providers. In OAuth2-only mode the OAuth email identifies the user for the vault lookup.
+- New docs: [Hosted Mode & Authentication](docs/user-guide/hosted-authentication.md) with threat model, Claude Code setup, and deployment requirements.
+
+### Changed
+- **Retired the `X-Zulip-*` credential header path.** Hosted mode now sources the user's key from OAuth identity + vault rather than per-request headers. The reusable plumbing (request-scoped credential binding, per-identity cache scope) is unchanged; only the credential source moved.
+- **Merged upstream v0.7.1** — Brings in the agent control plane (session-scoped agent tools, `ensure_agent_session`, `list_sessions`, `close_agent_session`), Claude Code plugin, explicit FastMCP task support for long-running tools, and lifespan-managed background services. All uW fork hardening (channel filtering, read-only mode, agent disabling, audit logging, configurable transport) is preserved. AFK mode tools are removed upstream; the session model replaces them.
+
+## [0.7.1] - 2026-05-11
+
+### Fixed
+- Restored v0.7.x startup under FastMCP 3 by installing the task extra (`fastmcp[anthropic,tasks]`) and disabling accidental server-wide task advertisement. Reported by @jessealama in #10 and addressed by @jessealama's PR #11, with additional confirmation from @peteWT and @jpuritz in #12.
+- Made MCP task support explicit and opt-in for long-running tools only: `teleport_chat`, `wait_for_response`, and `listen_events` now advertise optional background-task support while normal fast tools remain standard calls.
+- Converted `teleport_chat(wait_for_reply=True)` and `wait_for_response` to async-safe implementations so task-enabled calls do not block the server event loop.
+- Moved background service startup and shutdown into the FastMCP lifespan, giving the Zulip listener a managed teardown path instead of process-lifetime threads.
+
+### Tests
+- Added real FastMCP registration coverage for core and extended tools, including a regression guard that prevents reintroducing server-wide `tasks=True`.
+
+### Docs
+- Modernized `CLAUDE.md`: removed stale v0.4 import patterns, fixed the local connection-test snippet to use installed-package imports, documented the `register_tool` / `optional_background_task` pattern from `tools/registration.py`, the 20-core / 56-extended tool modes (`--extended-tools` / `ZULIPCHAT_EXTENDED_TOOLS=1`), and the three project skills under `.claude/skills/`.
+- Switched GitHub releases to `gh release create --generate-notes`. `RELEASE.md` removed; `CHANGELOG.md` is the single source of release notes.
+- `ROADMAP.md` v0.7.1 date corrected to 2026-05-11 to match `CHANGELOG.md`.
+
+## [0.7.0] - 2026-05-01
+
+### Added
+- **Agent control plane** for session-scoped Claude Code workflows. New core tool `ensure_agent_session` and extended tools `list_sessions`, `close_agent_session`, backed by a stable agent profile registered via the rebuilt `register_agent`.
+- **Claude Code plugin** at `integrations/claude-code/plugin/` with `.claude-plugin/plugin.json`, hook bridge, three skills (`zulipchat-session-operator`, `zulipchat-notifyme`, `zulipchat-loop`), and the `zulip-session-operator` subagent.
+- **Standalone `.claude/` template** at `integrations/claude-code/.claude/` for users who want to vendor the integration into their own repo without the plugin format.
+- **`zulipchat-mcp-hook` CLI** that bridges Claude Code lifecycle events (`SessionStart`, `PermissionRequest`, `PostToolUseFailure`, `Notification idle_prompt`, `StopFailure`, `TaskCompleted`, `SessionEnd`) into the bound Zulip topic.
+- **`zulipchat-mcp-integrate export --client claude-code`** subcommand to generate the plugin or standalone scaffold into a target directory, with bot-config and extended-tools modes.
+- DuckDB tables `agent_profiles`, `agent_sessions`, `agent_requests`, `session_events`. Migration is additive; existing tables and rows are untouched.
+
+### Changed
+- `register_agent` now accepts optional `agent_name`, `owner_email`, `stream_name`, `topic_prefix`, `metadata` keyword arguments. Existing calls without arguments still work. The return shape is new: `agent_id`, `agent_name`, `agent_type`, `owner_email`, `stream`, `topic_prefix`.
+- `agent_message`, `request_user_input`, and `wait_for_response` now operate session-scoped against the topic bound by `ensure_agent_session`. The previous channel-broadcast behavior is replaced.
+- Hook commands in the Claude Code plugin invoke `uvx --from zulipchat-mcp zulipchat-mcp-hook` so the bridge resolves whether the package is installed persistently or run ephemerally.
+- Setup wizard command corrected to `uvx --from zulipchat-mcp zulipchat-mcp-setup` across README, troubleshooting, installation, quick-start, and setup-wizard docs. (PR #9, credit: @odurif0)
+
+### Removed
+- AFK mode tools `enable_afk_mode`, `disable_afk_mode`, `get_afk_status`, and the merged `afk_mode` tool. The session model (`ensure_agent_session` plus `close_agent_session`) replaces them.
+
+### Upgrading from 0.6.x
+- DuckDB schema upgrade runs automatically on first start of v0.7.0. No manual migration is required.
+- Scripts that called the AFK tools must be updated to the session model.
+- Scripts that parsed the previous `register_agent` return keys must read from the new keys (`agent_id`, `stream`, `topic_prefix`).
+- For the new Claude Code plugin, install via Claude Code's plugin command and ensure `~/.zuliprc` (and optionally `~/.zuliprc-bot`) exist. Hooks call `uvx --from zulipchat-mcp zulipchat-mcp-hook`, so no global package install is required.
+
 ## [0.7.0-uw] - 2026-03-19
 
 unfoldingWord organizational fork. All changes are additive — upstream compatibility preserved.

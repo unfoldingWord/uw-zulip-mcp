@@ -62,9 +62,9 @@
 
 ## Services (`core/service_manager.py`, `services/`)
 
-- Listener and AFK watcher behavior lives in service layer.
-- Agent communication tooling uses persistent DuckDB-backed state.
-- **Services skipped entirely when `--disable-agents` is set.**
+- Listener startup/supervision lives in the service layer, managed by the FastMCP lifespan.
+- Agent communication tooling uses persistent DuckDB-backed state shared with the agent control plane (`core/agent_control.py`).
+- **With `--disable-agents`, no agent tools are registered, so the listener never starts.**
 - Silent failure paths now log warnings instead of bare `pass`.
 
 ## Tool registration (`tools/__init__.py`)
@@ -72,4 +72,4 @@
 - `register_core_tools(mcp, read_only, disable_agents)` defines the tool baseline.
 - `register_extended_tools(mcp, read_only, disable_agents)` appends the extended tool set.
 - **`read_only=True`** omits all write tools (send, edit, react, flag, upload, identity switch).
-- **`disable_agents=True`** omits all agent tools (register, message, wait, AFK, events).
+- **`disable_agents=True`** omits all agent tools (register, sessions, message, wait, events).

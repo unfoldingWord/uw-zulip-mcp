@@ -39,6 +39,7 @@ def _float_env(key: str, default: float) -> float:
         )
         return default
 
+
 F = TypeVar("F", bound=TypingCallable[..., Any])
 
 
@@ -100,8 +101,20 @@ class MessageCache:
         return len(self.cache)
 
 
+def _identity_scope() -> str:
+    """Cache-key prefix for the current request identity.
+
+    Empty in single-user (stdio) mode — keys are unchanged. In hosted mode
+    each credential identity gets its own key space so data visible to one
+    user (stream lists, user directories) is never served to another.
+    """
+    from .request_credentials import current_cache_scope
+
+    return current_cache_scope()
+
+
 class StreamCache:
-    """Cache for stream information."""
+    """Cache for stream information. Keys are scoped per request identity."""
 
     def __init__(self, ttl: int = 600) -> None:
         """Initialize stream cache.
@@ -113,23 +126,27 @@ class StreamCache:
 
     def get_streams(self) -> list[Any] | None:
         """Get cached streams list."""
-        return self.cache.get("streams_list")
+        return self.cache.get(f"{_identity_scope()}:streams_list")
 
     def set_streams(self, streams: list[Any]) -> None:
         """Cache streams list."""
-        self.cache.set("streams_list", streams)
+        self.cache.set(f"{_identity_scope()}:streams_list", streams)
 
     def get_stream_info(self, stream_name: str) -> dict[str, Any] | None:
         """Get cached stream information."""
-        return self.cache.get(f"stream_{stream_name}")
+        return self.cache.get(f"{_identity_scope()}:stream_{stream_name}")
 
     def set_stream_info(self, stream_name: str, info: dict[str, Any]) -> None:
         """Cache stream information."""
-        self.cache.set(f"stream_{stream_name}", info)
+        self.cache.set(f"{_identity_scope()}:stream_{stream_name}", info)
 
 
 class UserCache:
-    """Cache for user information with fuzzy name resolution."""
+    """Cache for user information with fuzzy name resolution.
+
+    All entries and indexes are scoped per request identity so hosted-mode
+    users never see each other's cached directory data.
+    """
 
     def __init__(self, ttl: int = 900) -> None:
         """Initialize user cache.
@@ -138,17 +155,23 @@ class UserCache:
             ttl: Time to live in seconds (default: 15 minutes)
         """
         self.cache = MessageCache(ttl)
-        self._name_index: dict[str, str] = {}  # lowercase name → email
+        # scope → lowercase name → email
+        self._name_index: dict[str, dict[str, str]] = {}
+        # scope → display email → delivery email
+        self._email_to_delivery: dict[str, dict[str, str]] = {}
 
     def get_users(self) -> list[Any] | None:
         """Get cached users list."""
-        return self.cache.get("users_list")
+        return self.cache.get(f"{_identity_scope()}:users_list")
 
     def set_users(self, users: list[Any]) -> None:
         """Cache users list and build name index."""
-        self.cache.set("users_list", users)
-        self._name_index.clear()
-        self._email_to_delivery: dict[str, str] = {}  # display email → delivery email
+        scope = _identity_scope()
+        self.cache.set(f"{scope}:users_list", users)
+        name_index = self._name_index.setdefault(scope, {})
+        name_index.clear()
+        email_to_delivery = self._email_to_delivery.setdefault(scope, {})
+        email_to_delivery.clear()
         for user in users:
             if not user.get("is_active", True):
                 continue
@@ -157,13 +180,13 @@ class UserCache:
             full_name = user.get("full_name", "")
             # Map display email to delivery email for identity matching
             if email and delivery and email != delivery:
-                self._email_to_delivery[email] = delivery
+                email_to_delivery[email] = delivery
             if full_name and email:
-                self._name_index[full_name.lower()] = email
+                name_index[full_name.lower()] = email
                 # Index first name too
                 first = full_name.split()[0]
-                if first.lower() not in self._name_index:
-                    self._name_index[first.lower()] = email
+                if first.lower() not in name_index:
+                    name_index[first.lower()] = email
 
     def resolve_user(self, query: str) -> dict[str, Any]:
         """Resolve a display name to email via fuzzy matching.
@@ -171,19 +194,20 @@ class UserCache:
         Returns dict with email, full_name, matched, and confidence.
         """
         q = query.lower().strip()
+        name_index = self._name_index.get(_identity_scope(), {})
 
         # Exact match first
-        if q in self._name_index:
-            email = self._name_index[q]
+        if q in name_index:
+            email = name_index[q]
             return {"email": email, "matched": q, "confidence": 1.0}
 
         # Fuzzy match
         cutoff = _float_env("ZULIPCHAT_FUZZY_MATCH_CUTOFF", 0.6)
         cutoff = max(0.0, min(1.0, cutoff))
-        matches = difflib.get_close_matches(q, self._name_index.keys(), n=1, cutoff=cutoff)
+        matches = difflib.get_close_matches(q, name_index.keys(), n=1, cutoff=cutoff)
         if matches:
             matched = matches[0]
-            email = self._name_index[matched]
+            email = name_index[matched]
             score = difflib.SequenceMatcher(None, q, matched).ratio()
             return {"email": email, "matched": matched, "confidence": round(score, 2)}
 
@@ -193,18 +217,21 @@ class UserCache:
         """Check if two emails (display or delivery) belong to the same user."""
         if email_a == email_b:
             return True
+        email_to_delivery = self._email_to_delivery.get(_identity_scope(), {})
         # Check cross-mapping: a's delivery == b, or b's delivery == a
-        delivery_a = self._email_to_delivery.get(email_a, email_a)
-        delivery_b = self._email_to_delivery.get(email_b, email_b)
-        return delivery_a == email_b or delivery_b == email_a or delivery_a == delivery_b
+        delivery_a = email_to_delivery.get(email_a, email_a)
+        delivery_b = email_to_delivery.get(email_b, email_b)
+        return (
+            delivery_a == email_b or delivery_b == email_a or delivery_a == delivery_b
+        )
 
     def get_user_info(self, email: str) -> dict[str, Any] | None:
         """Get cached user information."""
-        return self.cache.get(f"user_{email}")
+        return self.cache.get(f"{_identity_scope()}:user_{email}")
 
     def set_user_info(self, email: str, info: dict[str, Any]) -> None:
         """Cache user information."""
-        self.cache.set(f"user_{email}", info)
+        self.cache.set(f"{_identity_scope()}:user_{email}", info)
 
 
 def cache_decorator(ttl: int = 300, key_prefix: str = "") -> TypingCallable[[F], F]:

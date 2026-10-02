@@ -16,13 +16,20 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from ..utils.env import env_bool
+
 logger = logging.getLogger(__name__)
 
 # Matches JD prefixes: "30 Infrastructure", "42.01 Hebrew Grammar", "00.16 Prayer Requests"
 JD_PREFIX_PATTERN = re.compile(r"^(\d{2})(?:\.(\d{2}))?\s")
 
 # Counter for blocked-by-policy events (for observability)
-_blocked_counts: dict[str, int] = {"send": 0, "read": 0, "stream_list": 0, "stream_id": 0}
+_blocked_counts: dict[str, int] = {
+    "send": 0,
+    "read": 0,
+    "stream_list": 0,
+    "stream_id": 0,
+}
 
 
 def get_blocked_counts() -> dict[str, int]:
@@ -304,7 +311,9 @@ class ChannelFilter:
         result = [s for s in streams if self.is_stream_allowed(s)]
         blocked = before - len(result)
         if blocked > 0:
-            _blocked_counts["stream_list"] = _blocked_counts.get("stream_list", 0) + blocked
+            _blocked_counts["stream_list"] = (
+                _blocked_counts.get("stream_list", 0) + blocked
+            )
         return result
 
     def filter_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -330,7 +339,9 @@ class ChannelFilter:
 
             # Stream messages — check channel name AND privacy
             recipient = msg.get("display_recipient", "")
-            if isinstance(recipient, str) and self.is_channel_allowed_with_privacy(recipient):
+            if isinstance(recipient, str) and self.is_channel_allowed_with_privacy(
+                recipient
+            ):
                 filtered.append(msg)
             elif isinstance(recipient, str):
                 _increment_blocked("read")
@@ -355,22 +366,18 @@ def load_filter_config_from_env() -> ChannelFilterConfig:
         ZULIPCHAT_EXCLUDE_PRIVATE: "true" to exclude private channels (default: true)
     """
 
-    def _bool_env(key: str, default: bool = True) -> bool:
-        val = os.getenv(key, "").lower()
-        if not val:
-            return default
-        return val in ("true", "1", "yes", "on")
-
     return ChannelFilterConfig(
-        enabled=_bool_env("ZULIPCHAT_CHANNEL_FILTER_ENABLED", default=False),
+        enabled=env_bool("ZULIPCHAT_CHANNEL_FILTER_ENABLED", default=False),
         jd_allow_areas=parse_area_ranges(os.getenv("ZULIPCHAT_JD_ALLOW_AREAS", "")),
         jd_deny_areas=parse_area_ranges(os.getenv("ZULIPCHAT_JD_DENY_AREAS", "")),
         channel_include=parse_channel_list(os.getenv("ZULIPCHAT_CHANNEL_INCLUDE", "")),
         channel_exclude=parse_channel_list(os.getenv("ZULIPCHAT_CHANNEL_EXCLUDE", "")),
-        exclude_non_jd=_bool_env("ZULIPCHAT_EXCLUDE_NON_JD", default=True),
-        exclude_dms=_bool_env("ZULIPCHAT_EXCLUDE_DMS", default=True),
-        exclude_private=_bool_env("ZULIPCHAT_EXCLUDE_PRIVATE", default=True),
-        deny_unknown_stream_ids=_bool_env("ZULIPCHAT_DENY_UNKNOWN_STREAM_IDS", default=True),
+        exclude_non_jd=env_bool("ZULIPCHAT_EXCLUDE_NON_JD", default=True),
+        exclude_dms=env_bool("ZULIPCHAT_EXCLUDE_DMS", default=True),
+        exclude_private=env_bool("ZULIPCHAT_EXCLUDE_PRIVATE", default=True),
+        deny_unknown_stream_ids=env_bool(
+            "ZULIPCHAT_DENY_UNKNOWN_STREAM_IDS", default=True
+        ),
     )
 
 

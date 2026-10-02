@@ -1,0 +1,47 @@
+# Version control (never bake history/config into an image)
+.git
+.gitignore
+.gitattributes
+
+# Secrets and local credentials — must never reach the image
+.env
+.env.*
+*.env
+zuliprc
+.zuliprc
+*.zuliprc
+settings.env
+oauth-debug-notes.md
+*.pem
+*.key
+
+# Virtual environments (rebuilt inside the image)
+.venv
+venv
+env
+ENV
+
+# Python / tooling caches and build artifacts
+__pycache__
+**/__pycache__
+*.pyc
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.uv_cache
+htmlcov
+.coverage
+.coverage.*
+coverage.xml
+dist
+build
+*.egg-info
+
+# Editor / OS cruft
+.idea
+.vscode
+.DS_Store
+
+# Docker + CI files not needed inside the image
+Dockerfile
+.dockerignore

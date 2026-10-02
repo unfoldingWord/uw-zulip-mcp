@@ -60,9 +60,7 @@ class TestResolveFileUrl:
         return c
 
     def test_relative_user_uploads(self):
-        url = _resolve_file_url(
-            self._make_client(), "/user_uploads/43617/abc/file.txt"
-        )
+        url = _resolve_file_url(self._make_client(), "/user_uploads/43617/abc/file.txt")
         assert url == "https://example.zulipchat.com/user_uploads/43617/abc/file.txt"
 
     def test_raw_suffix(self):

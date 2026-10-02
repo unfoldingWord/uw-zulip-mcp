@@ -4,7 +4,7 @@ import logging
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse, urlunparse
 
 from zulip import Client
@@ -13,6 +13,9 @@ from ..config import ConfigManager
 from .audit import log_channel_access, log_tool_invocation
 from .cache import cache_decorator, stream_cache, user_cache
 from .channel_filter import get_channel_filter, is_channel_allowed
+
+if TYPE_CHECKING:
+    from .request_credentials import RequestCredentials
 
 logger = logging.getLogger(__name__)
 
@@ -58,36 +61,59 @@ class ZulipClientWrapper:
         self,
         config_manager: ConfigManager | None = None,
         use_bot_identity: bool = False,
+        *,
+        credentials: "RequestCredentials | None" = None,
+        site: str | None = None,
     ):
         """Initialize Zulip client wrapper.
 
         Args:
             config_manager: Configuration manager instance
             use_bot_identity: If True, use bot credentials when available
+            credentials: Explicit per-request user credentials (hosted mode).
+                When provided, config_manager credential lookup is bypassed
+                and `site` must be supplied (always the server-pinned site).
+            site: Zulip site URL to pair with explicit credentials.
         """
-        self.config_manager = config_manager or ConfigManager()
+        if credentials is not None:
+            if not site:
+                raise ValueError("site is required with explicit credentials")
+            self.config_manager = config_manager
+            self.use_bot_identity = False
+            self._client_config = {
+                "email": credentials.email,
+                "api_key": credentials.api_key,
+                "site": site,
+                "config_file": None,
+            }
+            self.identity = "user"
+            self.identity_name = credentials.email.split("@")[0]
+            self._client: Client | None = None
+            self.current_email: str | None = credentials.email
+            self._base_url = self._normalize_site_base_url(site)
+            return
+
+        cm = config_manager or ConfigManager()
+        self.config_manager = cm
         self.use_bot_identity = use_bot_identity
 
-        if not self.config_manager.validate_config():
-            raise ValueError("Invalid Zulip configuration")
-
-        # Check if bot identity is requested and available
-        if use_bot_identity and self.config_manager.has_bot_credentials():
-            self._client_config = self.config_manager.get_zulip_client_config(
-                use_bot=True
-            )
+        # Check if bot identity is requested and available. Bot identity
+        # only needs bot credentials — user credentials may be absent
+        # (hosted mode configures the bot server-side and nothing else).
+        if use_bot_identity and cm.has_bot_credentials():
+            self._client_config = cm.get_zulip_client_config(use_bot=True)
             self.identity = "bot"
-            self.identity_name = self.config_manager.config.bot_name or "Bot"
+            self.identity_name = cm.config.bot_name or "Bot"
         else:
-            self._client_config = self.config_manager.get_zulip_client_config(
-                use_bot=False
-            )
+            if not cm.validate_config():
+                raise ValueError("Invalid Zulip configuration")
+            self._client_config = cm.get_zulip_client_config(use_bot=False)
             self.identity = "user"
             email = self._client_config.get("email")
             self.identity_name = email.split("@")[0] if email else "User"
 
         # Lazy loading: client created on first API call
-        self._client: Client | None = None
+        self._client = None
         self.current_email = self._client_config.get("email")
         site = self._client_config.get("site")
         self._base_url = self._normalize_site_base_url(site) if site else ""
@@ -175,8 +201,11 @@ class ZulipClientWrapper:
                     "Blocked send to '%s': channel excluded by policy", stream_name
                 )
                 log_tool_invocation(
-                    "send_message", stream=stream_name,
-                    identity=self.identity, blocked=True, reason="channel_filter",
+                    "send_message",
+                    stream=stream_name,
+                    identity=self.identity,
+                    blocked=True,
+                    reason="channel_filter",
                 )
                 return {
                     "result": "error",
@@ -188,8 +217,10 @@ class ZulipClientWrapper:
             cf = get_channel_filter()
             if cf.config.enabled and cf.config.exclude_dms:
                 log_tool_invocation(
-                    "send_message", identity=self.identity,
-                    blocked=True, reason="dms_excluded",
+                    "send_message",
+                    identity=self.identity,
+                    blocked=True,
+                    reason="dms_excluded",
                 )
                 return {
                     "result": "error",
@@ -312,8 +343,11 @@ class ZulipClientWrapper:
         # Channel filter: block reads from excluded channels
         if stream_name and not is_channel_allowed(stream_name):
             log_tool_invocation(
-                "get_messages_from_stream", stream=stream_name,
-                identity=self.identity, blocked=True, reason="channel_filter",
+                "get_messages_from_stream",
+                stream=stream_name,
+                identity=self.identity,
+                blocked=True,
+                reason="channel_filter",
             )
             return {
                 "result": "success",
@@ -423,8 +457,10 @@ class ZulipClientWrapper:
         cf = get_channel_filter()
         if not cf.is_stream_id_allowed(stream_id):
             log_tool_invocation(
-                "get_stream_topics", identity=self.identity,
-                blocked=True, reason="stream_id_filter",
+                "get_stream_topics",
+                identity=self.identity,
+                blocked=True,
+                reason="stream_id_filter",
                 extra={"stream_id": str(stream_id)},
             )
             return {

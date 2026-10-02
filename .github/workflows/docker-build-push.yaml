@@ -1,0 +1,60 @@
+name: Build and Push Docker Image
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKER_BUILD_USERNAME }}
+          password: ${{ secrets.DOCKER_BUILD_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            unfoldingword/zulipchat-mcp
+          tags: |
+            # Branch images for traceability: `develop`, `main`, and a
+            # commit-pinned `<branch>-<sha>`.
+            type=ref,event=branch
+            type=sha,prefix={{branch}}-,enable=${{ github.ref_type == 'branch' }}
+            # Develop stage: the default branch (develop) publishes the rolling
+            # `latest` image.
+            type=raw,value=latest,enable={{is_default_branch}}
+            # Production stage: a release tag `vX.Y.Z` publishes the semver
+            # images and `stable`.
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=stable,enable=${{ github.ref_type == 'tag' }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

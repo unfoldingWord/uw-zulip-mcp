@@ -1,8 +1,8 @@
 # Roadmap
 
-## v0.6.2 (Current)
+## v0.8.0 (Current)
 
-Released 2026-02-22 - [PyPI](https://pypi.org/project/zulipchat-mcp/)
+Released 2026-05-11 — Docker image `unfoldingword/zulipchat-mcp`
 
 **Highlights:**
 - Teleport-Chat: bidirectional agent-human DMs with identity-aware routing
@@ -10,7 +10,7 @@ Released 2026-02-22 - [PyPI](https://pypi.org/project/zulipchat-mcp/)
 - Always-on message listener (DMs + streams)
 - AFK auto-return enforcement
 
-## v0.6.0 (Next)
+## Planned (Next)
 
 ### Feature 1: Multi-Organization Support
 **Problem**: Users with multiple Zulip orgs (work, personal, open-source) can't switch contexts.

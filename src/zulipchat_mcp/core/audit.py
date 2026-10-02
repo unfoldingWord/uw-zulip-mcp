@@ -20,6 +20,8 @@ import os
 import time
 from typing import Any
 
+from ..utils.env import env_bool
+
 # Dedicated audit logger — separate from application logs so operators
 # can route it independently (e.g., to a file, syslog, or SIEM)
 audit_logger = logging.getLogger("zulipchat_mcp.audit")
@@ -41,8 +43,7 @@ def init_audit_logging() -> None:
     """
     global _AUDIT_ENABLED, _AUDIT_INITIALIZED
 
-    enabled = os.getenv("ZULIPCHAT_AUDIT_ENABLED", "").lower()
-    _AUDIT_ENABLED = enabled in ("true", "1", "yes", "on")
+    _AUDIT_ENABLED = env_bool("ZULIPCHAT_AUDIT_ENABLED")
 
     if not _AUDIT_ENABLED:
         return
@@ -61,9 +62,7 @@ def init_audit_logging() -> None:
                 h.close()
 
         handler = logging.FileHandler(audit_file)
-        handler.setFormatter(
-            logging.Formatter("%(message)s")
-        )
+        handler.setFormatter(logging.Formatter("%(message)s"))
         audit_logger.addHandler(handler)
         audit_logger.propagate = False
 
@@ -81,7 +80,14 @@ def _log_event(event: dict[str, Any]) -> None:
     """Serialize and log an audit event dict as JSON.
 
     All values are serialized via json.dumps to prevent log injection.
+    In hosted mode, every event is stamped with the authenticated request
+    user's email (never the API key) for per-user accountability.
     """
+    from .request_credentials import get_request_credentials
+
+    creds = get_request_credentials()
+    if creds is not None:
+        event.setdefault("request_user", creds.email)
     event["timestamp_unix"] = round(time.time(), 3)
     audit_logger.info(json.dumps(event, default=str))
 

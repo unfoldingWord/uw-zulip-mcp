@@ -2,13 +2,20 @@
 
 import argparse
 import os
+from collections.abc import AsyncIterator
+from typing import Any, Literal, cast
 
 from fastmcp import FastMCP
+from fastmcp.server.lifespan import lifespan
 
 from . import __version__
-from .config import init_config_manager
+from .config import ConfigManager, init_config_manager
+from .core import hosted_config
 from .core.audit import init_audit_logging, is_audit_enabled
+from .core.auth_provider import AuthConfigurationError, build_auth_provider
 from .core.channel_filter import init_channel_filter
+from .core.hosted_middleware import ZulipCredentialMiddleware
+from .core.request_credentials import set_hosted_mode
 from .core.security import set_unsafe_mode
 
 # Optional: Anthropic sampling handler for LLM analytics fallback
@@ -21,7 +28,7 @@ except ImportError:
 
 # Optional service manager for background services
 try:
-    from .core.service_manager import init_service_manager
+    from .core.service_manager import init_service_manager, shutdown_service_manager
 
     service_manager_available = True
 except ImportError:
@@ -36,7 +43,28 @@ try:
 except ImportError:
     database_available = False
 
+from .utils.env import env_bool
 from .utils.logging import get_logger, setup_structured_logging
+
+
+def _build_server_lifespan(config_manager: ConfigManager, enable_listener: bool) -> Any:
+    """Build a FastMCP lifespan for ZulipChat background services."""
+
+    @lifespan
+    async def server_lifespan(server: FastMCP[Any]) -> AsyncIterator[dict[str, Any]]:
+        if not service_manager_available:
+            yield {}
+            return
+
+        svc = init_service_manager(config_manager, enable_listener=enable_listener)
+        if enable_listener:
+            svc.start()
+        try:
+            yield {"service_manager": svc}
+        finally:
+            shutdown_service_manager()
+
+    return server_lifespan
 
 
 def main() -> None:
@@ -76,7 +104,7 @@ def main() -> None:
     parser.add_argument(
         "--extended-tools",
         action="store_true",
-        help="Register all tools (~55) instead of core set (19).",
+        help="Register all tools (56) instead of the core set (20).",
     )
     parser.add_argument(
         "--read-only",
@@ -86,7 +114,41 @@ def main() -> None:
     parser.add_argument(
         "--disable-agents",
         action="store_true",
-        help="Disable all agent tools (registration, messaging, AFK, events).",
+        help="Disable all agent tools (registration, sessions, messaging, events).",
+    )
+    parser.add_argument(
+        "--hosted",
+        action="store_true",
+        help=(
+            "Hosted multi-user mode (OAuth2-only): clients authenticate with "
+            "OAuth; the server resolves each user's Zulip API key from the "
+            "OpenBao/Vault store and caches it per identity. New users add "
+            "their key via the /enroll web page. Requires a network transport, "
+            "ZULIP_SITE, an auth provider (ZULIPCHAT_AUTH_MODE), and OpenBao."
+        ),
+    )
+
+    # Transport options
+    parser.add_argument(
+        "--transport",
+        choices=["stdio", "sse", "http", "streamable-http"],
+        default="stdio",
+        help=(
+            "Transport protocol (default: stdio). "
+            "Use 'http'/'streamable-http' for persistent network deployments, "
+            "'sse' for legacy SSE clients."
+        ),
+    )
+    parser.add_argument(
+        "--host",
+        default=None,
+        help="Host to bind to in SSE/HTTP mode (default: 127.0.0.1).",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=None,
+        help="Port to listen on in SSE/HTTP mode (default: 3000, or MCP_PORT env var).",
     )
 
     args = parser.parse_args()
@@ -102,8 +164,37 @@ def main() -> None:
         debug=args.debug,
     )
 
+    # Hosted multi-user mode: per-request client credentials, none at rest
+    hosted = args.hosted or env_bool("ZULIPCHAT_HOSTED")
+    set_hosted_mode(hosted)
+
     # Validate configuration
-    if not config_manager.validate_config():
+    if hosted:
+        if args.transport == "stdio" and not os.getenv("ZULIPCHAT_TRANSPORT"):
+            logger.error(
+                "Hosted mode requires a network transport. "
+                "Use --transport http (or sse)."
+            )
+            return
+        if not config_manager.validate_hosted_config():
+            logger.error(
+                "Hosted mode requires ZULIP_SITE to be set server-side. "
+                "User credentials are supplied per-request by clients."
+            )
+            return
+        if hosted_config.vault_enabled():
+            logger.info(
+                "HOSTED MODE (OAuth2-only) - user API keys resolved from the "
+                "OpenBao/Vault store, cached per identity; enrollment via the "
+                "/enroll web page"
+            )
+        else:
+            logger.warning(
+                "HOSTED MODE but OpenBao/Vault is not configured "
+                "(set OPENBAO_TOKEN or OPENBAO_ROLE_ID/OPENBAO_SECRET_ID). "
+                "Authenticated users with no stored key cannot be served."
+            )
+    elif not config_manager.validate_config():
         logger.error(
             "Invalid configuration. Please run 'uv run zulipchat-mcp-setup' first."
         )
@@ -158,30 +249,98 @@ def main() -> None:
             "ANTHROPIC_API_KEY not set - LLM analytics will require client sampling support"
         )
 
+    # OAuth 2.1 auth provider for the user -> MCP server hop (env-driven)
+    try:
+        auth_provider = build_auth_provider()
+    except AuthConfigurationError as e:
+        logger.error("Auth configuration error: %s", e)
+        return
+    if auth_provider is not None:
+        logger.info(
+            "Auth ENABLED (%s) - clients must authenticate to reach this server",
+            os.getenv("ZULIPCHAT_AUTH_MODE"),
+        )
+    elif hosted:
+        logger.warning(
+            "Hosted mode without ZULIPCHAT_AUTH_MODE - the server relies "
+            "solely on per-request Zulip credentials. Enable OAuth (jwt/"
+            "google/oidc) or front with an authenticating proxy."
+        )
+
     # Initialize MCP with modern configuration
     mcp = FastMCP(
         "ZulipChat MCP",
+        version=__version__,
+        website_url="https://github.com/akougkas/zulipchat-mcp",
+        instructions=(
+            "Use ZulipChat MCP to bind coding agents to Zulip topics, send lifecycle "
+            "updates, request approvals, and read steering commands from the topic owner."
+        ),
         on_duplicate="warn",
+        # FastMCP protocol tasks are enabled per long-running tool. Keeping the
+        # server default forbidden prevents sync/fast tools from being advertised
+        # as task-capable by accident.
+        tasks=False,
+        lifespan=_build_server_lifespan(config_manager, args.enable_listener),
         sampling_handler=sampling_handler,
         sampling_handler_behavior="fallback",  # Use only when client doesn't support sampling
+        auth=auth_provider,
     )
+
+    # Bind per-request Zulip credentials (OAuth identity -> cache/vault) around
+    # every tool call. No-op on stdio, where there is no OAuth identity.
+    mcp.add_middleware(ZulipCredentialMiddleware())
+
+    # Serve the browser enrollment page when hosted with a vault configured.
+    if hosted and hosted_config.vault_enabled():
+        from .core.enrollment_routes import register_enrollment_routes
+
+        register_enrollment_routes(mcp)
+        if auth_provider is None:
+            logger.error(
+                "OAuth2-only hosted mode needs an auth provider to identify "
+                "users. Set ZULIPCHAT_AUTH_MODE (google/oidc/jwt) or front the "
+                "server with an authenticating proxy."
+            )
+        if hosted_config.public_base_url() is None:
+            logger.warning(
+                "ZULIPCHAT_PUBLIC_URL is not set - enrollment links will be "
+                "relative paths. Set it to this server's public URL."
+            )
+
+        # Probe the vault at startup: CA file readable, TLS reachable, auth OK.
+        # Uses a throwaway client so the request-time singleton is untouched.
+        import asyncio
+
+        from .core.secret_store import SecretStore
+
+        async def _probe_vault() -> bool:
+            probe = SecretStore()
+            try:
+                return await probe.selfcheck()
+            finally:
+                await probe.aclose()
+
+        try:
+            vault_ok = asyncio.run(_probe_vault())
+        except Exception as e:  # never block startup on the probe itself
+            logger.error("OpenBao startup selfcheck crashed: %s", e)
+            vault_ok = False
+
+        if not vault_ok and hosted_config.openbao_startup_required():
+            logger.error(
+                "OpenBao self-check failed and OPENBAO_STARTUP_REQUIRED is set; "
+                "refusing to start. Fix OpenBao connectivity/credentials, or "
+                "unset OPENBAO_STARTUP_REQUIRED to boot anyway."
+            )
+            return
 
     logger.info("FastMCP initialized successfully")
 
     # Determine tool modes
-    extended = args.extended_tools or os.getenv("ZULIPCHAT_EXTENDED_TOOLS", "0") in (
-        "1",
-        "true",
-        "True",
-    )
-    read_only = args.read_only or os.getenv("ZULIPCHAT_READ_ONLY", "0") in (
-        "1",
-        "true",
-        "True",
-    )
-    disable_agents = args.disable_agents or os.getenv(
-        "ZULIPCHAT_DISABLE_AGENTS", "0"
-    ) in ("1", "true", "True")
+    extended = args.extended_tools or env_bool("ZULIPCHAT_EXTENDED_TOOLS")
+    read_only = args.read_only or env_bool("ZULIPCHAT_READ_ONLY")
+    disable_agents = args.disable_agents or env_bool("ZULIPCHAT_DISABLE_AGENTS")
 
     if read_only:
         logger.info("READ-ONLY MODE - write tools will not be registered")
@@ -197,36 +356,21 @@ def main() -> None:
     else:
         logger.info("Registered core tool set")
 
-    # Warm user/stream caches for fast fuzzy resolution
-    try:
-        from .config import get_client
-
-        _warmup_client = get_client()
-        _warmup_client.get_users()  # populates user_cache via client wrapper
-        _warmup_client.get_streams()  # populates stream_cache via client wrapper
-        logger.info("User and stream caches warmed")
-    except Exception as e:
-        logger.debug(f"Cache warmup skipped: {e}")
-
-    # Initialize background services singleton. The listener starts eagerly only with
-    # --enable-listener; otherwise it lazy-starts on first agent tool call via ensure_listener().
-    # Skip entirely if agents are disabled — no background services needed.
-    if service_manager_available and not disable_agents:
+    # Warm user/stream caches for fast fuzzy resolution. Skipped in hosted
+    # mode: there is no server-side user identity to warm caches for.
+    if not hosted:
         try:
-            svc = init_service_manager(config_manager, enable_listener=args.enable_listener)
-            if args.enable_listener:
-                svc.start()
-            logger.info(
-                "Background services %s",
-                "started (listener enabled)" if args.enable_listener else "ready (listener lazy)",
-            )
+            from .config import get_client
+
+            _warmup_client = get_client()
+            _warmup_client.get_users()  # populates user_cache via client wrapper
+            _warmup_client.get_streams()  # populates stream_cache via client wrapper
+            logger.info("User and stream caches warmed")
         except Exception as e:
-            logger.warning(f"Could not initialize background services: {e}")
-    elif disable_agents:
-        logger.info("Background services skipped (agents disabled)")
+            logger.debug(f"Cache warmup skipped: {e}")
 
     # Privacy notice on stderr (visible to operator, not to MCP client)
-    quiet = os.getenv("ZULIPCHAT_QUIET", "0") in ("1", "true", "True")
+    quiet = env_bool("ZULIPCHAT_QUIET")
     if not quiet:
         import sys
 
@@ -256,9 +400,15 @@ def main() -> None:
                 lines.append(f"  Excluded:        {n_exclude} channel(s)")
             if n_include:
                 lines.append(f"  Included:        {n_include} override(s)")
-            lines.append(f"  Private chans:   {'excluded' if channel_filter.config.exclude_private else 'allowed'}")
-            lines.append(f"  DMs:             {'excluded' if channel_filter.config.exclude_dms else 'allowed'}")
-            lines.append(f"  Non-JD chans:    {'excluded' if channel_filter.config.exclude_non_jd else 'allowed'}")
+            lines.append(
+                f"  Private chans:   {'excluded' if channel_filter.config.exclude_private else 'allowed'}"
+            )
+            lines.append(
+                f"  DMs:             {'excluded' if channel_filter.config.exclude_dms else 'allowed'}"
+            )
+            lines.append(
+                f"  Non-JD chans:    {'excluded' if channel_filter.config.exclude_non_jd else 'allowed'}"
+            )
             if channel_filter.config.deny_unknown_stream_ids:
                 lines.append("  Unknown IDs:     denied (fail-closed)")
             else:
@@ -271,7 +421,15 @@ def main() -> None:
             lines.append("  Channel filter:  DISABLED (all channels accessible)")
 
         lines.append(f"  Read-only mode:  {'YES' if read_only else 'no'}")
-        lines.append(f"  Agent tools:     {'disabled' if disable_agents else 'enabled'}")
+        lines.append(
+            f"  Agent tools:     {'disabled' if disable_agents else 'enabled'}"
+        )
+        if hosted:
+            lines.append("  Hosted mode:     YES (per-request credentials,")
+            lines.append("                   nothing stored server-side)")
+            lines.append(
+                f"  Server auth:     {os.getenv('ZULIPCHAT_AUTH_MODE', 'none')}"
+            )
         lines.append("")
         lines.append("=" * 60)
         lines.append("")
@@ -279,8 +437,22 @@ def main() -> None:
         sys.stderr.write("\n".join(lines) + "\n")
         sys.stderr.flush()
 
-    logger.info("Starting ZulipChat MCP server...")
-    mcp.run()
+    transport = args.transport or os.getenv("ZULIPCHAT_TRANSPORT", "stdio")
+    if transport not in ("stdio", "sse", "http", "streamable-http"):
+        logger.error(
+            "Invalid transport %r; expected stdio, sse, http, or streamable-http",
+            transport,
+        )
+        return
+    transport = cast(Literal["stdio", "sse", "http", "streamable-http"], transport)
+    logger.info("Starting ZulipChat MCP server (transport=%s)...", transport)
+
+    if transport == "stdio":
+        mcp.run()
+    else:
+        host = args.host or os.getenv("ZULIPCHAT_HOST", "127.0.0.1")
+        port = args.port or config_manager.config.port  # MCP_PORT env var, default 3000
+        mcp.run(transport=transport, host=host, port=port)
 
 
 if __name__ == "__main__":

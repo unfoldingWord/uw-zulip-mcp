@@ -4,8 +4,8 @@
 
 | Version | Status |
 | --- | --- |
-| 0.6.x | Supported |
-| < 0.6.0 | Security fixes are not guaranteed |
+| 0.7.x | Supported |
+| < 0.7.0 | Security fixes are not guaranteed |
 
 ## Responsible disclosure
 

@@ -1,6 +1,6 @@
 # uw-zulip-mcp Documentation
 
-uw-zulip-mcp v0.7.0-uw — unfoldingWord fork of ZulipChat MCP with privacy controls.
+uw-zulip-mcp — unfoldingWord fork of ZulipChat MCP v0.7.1 with privacy controls.
 
 ## Start Here
 
@@ -11,8 +11,9 @@ uw-zulip-mcp v0.7.0-uw — unfoldingWord fork of ZulipChat MCP with privacy cont
 - [Setup Wizard](user-guide/setup-wizard.md)
 - [Troubleshooting](TROUBLESHOOTING.md)
 
-## Privacy & Access Controls (v0.7.0-uw)
+## Privacy & Access Controls (v0.7.1)
 
+- **Hosted mode & authentication** — multi-user deployments with OAuth 2.1 and per-request credentials, nothing stored server-side ([Hosted Authentication](user-guide/hosted-authentication.md))
 - **Channel filtering** — JD taxonomy-based access control ([Configuration](user-guide/configuration.md#channel-filter))
 - **Read-only mode** — `--read-only` ([Configuration](user-guide/configuration.md#access-control-modes))
 - **Agent disabling** — `--disable-agents` ([Configuration](user-guide/configuration.md#access-control-modes))
@@ -55,10 +56,10 @@ uw-zulip-mcp v0.7.0-uw — unfoldingWord fork of ZulipChat MCP with privacy cont
 
 | Mode | Tools | Flag |
 |------|-------|------|
-| Core (default) | 19 | _(none)_ |
+| Core (default) | 20 | _(none)_ |
 | Core + read-only | 9 | `--read-only` |
-| Extended | ~55 | `--extended-tools` |
-| Extended + read-only | ~25 | `--extended-tools --read-only` |
+| Extended | 56 | `--extended-tools` |
+| Extended + read-only | 24 | `--extended-tools --read-only` |
 
 ## Community and Security
 
@@ -68,5 +69,4 @@ uw-zulip-mcp v0.7.0-uw — unfoldingWord fork of ZulipChat MCP with privacy cont
 
 ## Release History
 
-- [v0.7.0-uw](../CHANGELOG.md) — unfoldingWord fork (current)
-- `docs/releases/` contains historical snapshots for earlier versions.
+- [CHANGELOG](../CHANGELOG.md) — current: upstream v0.7.1 merged onto the v0.7.0-uw fork

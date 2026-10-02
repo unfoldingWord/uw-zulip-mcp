@@ -44,16 +44,7 @@ VERSION_UPDATES: list[VersionUpdate] = [
         'result["version"] == "{version}"',
     ),
     VersionUpdate(
-        "CLAUDE.md",
-        r"## Current Status \(v[0-9]+\.[0-9]+\.[0-9]+\)",
-        "## Current Status (v{version})",
-    ),
-    VersionUpdate(
-        "CLAUDE.md",
-        r"ZulipChat MCP Server v[0-9]+\.[0-9]+\.[0-9]+",
-        "ZulipChat MCP Server v{version}",
-    ),
-    VersionUpdate(
+        # CLAUDE.md is a symlink to AGENTS.md, so this covers both.
         "AGENTS.md",
         r"## Current Status \(v[0-9]+\.[0-9]+\.[0-9]+\)",
         "## Current Status (v{version})",
@@ -62,11 +53,6 @@ VERSION_UPDATES: list[VersionUpdate] = [
         "ROADMAP.md",
         r"## v[0-9]+\.[0-9]+\.[0-9]+ \(Current\)",
         "## v{version} (Current)",
-    ),
-    VersionUpdate(
-        "RELEASE.md",
-        r"# ZulipChat MCP v[0-9]+\.[0-9]+\.[0-9]+",
-        "# ZulipChat MCP v{version}",
     ),
     VersionUpdate(
         "server.json",

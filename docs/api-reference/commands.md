@@ -19,10 +19,7 @@ Command-chain tools are extended mode only.
 ```python
 await execute_chain(
     commands=[
-        {
-            "type": "search_messages",
-            "params": {"query_key": "query"}
-        },
+        {"type": "search_messages", "params": {"query_key": "query"}},
         {
             "type": "conditional_action",
             "params": {
@@ -33,19 +30,19 @@ await execute_chain(
                         "message_type_key": "message_type",
                         "to_key": "to",
                         "content_key": "content",
-                        "topic_key": "topic"
-                    }
-                }
-            }
-        }
+                        "topic_key": "topic",
+                    },
+                },
+            },
+        },
     ],
     initial_context={
         "query": "deploy",
         "message_type": "stream",
         "to": "engineering",
         "topic": "deploy",
-        "content": "Found matching messages"
-    }
+        "content": "Found matching messages",
+    },
 )
 ```
 

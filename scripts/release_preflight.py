@@ -94,7 +94,9 @@ def _check_server_json(version: str) -> list[CheckResult]:
     )
 
     top_ok = top == version
-    package_ok = package_versions == [version]
+    # No packages declared (Docker-only distribution) is valid; only enforce
+    # version alignment when packages are present.
+    package_ok = package_versions in ([], [version])
 
     return [
         CheckResult(
@@ -105,7 +107,7 @@ def _check_server_json(version: str) -> list[CheckResult]:
         CheckResult(
             "server.json package versions match",
             package_ok,
-            f"server.json package versions={package_versions!r}",
+            f"server.json package versions={package_versions or 'none'}",
         ),
     ]
 
@@ -122,21 +124,6 @@ def _check_changelog(version: str) -> CheckResult:
         f"CHANGELOG.md section for {version}" if found else "Missing changelog section"
     )
     return CheckResult("CHANGELOG entry exists", found, detail)
-
-
-def _check_release_md(version: str) -> CheckResult:
-    release_file = ROOT / "RELEASE.md"
-    if not release_file.exists():
-        return CheckResult("RELEASE.md exists", False, "Missing RELEASE.md")
-
-    content = _read_text(release_file)
-    found = bool(re.search(rf"^# .*v{re.escape(version)}\b", content, re.MULTILINE))
-    detail = (
-        "RELEASE.md title includes version"
-        if found
-        else "RELEASE.md title is not updated"
-    )
-    return CheckResult("RELEASE.md updated", found, detail)
 
 
 def _check_required_scripts() -> CheckResult:
@@ -192,11 +179,6 @@ def main() -> None:
         action="store_true",
         help="Skip failure if git tag vX.Y.Z already exists.",
     )
-    parser.add_argument(
-        "--skip-release-md",
-        action="store_true",
-        help="Skip checking RELEASE.md title version.",
-    )
     args = parser.parse_args()
 
     results: list[CheckResult] = []
@@ -206,8 +188,6 @@ def main() -> None:
     results.append(_check_system_tool_version(args.version))
     results.extend(_check_server_json(args.version))
     results.append(_check_changelog(args.version))
-    if not args.skip_release_md:
-        results.append(_check_release_md(args.version))
     results.append(_check_required_scripts())
 
     if args.allow_dirty:

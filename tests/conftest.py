@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import tempfile
 from collections.abc import Callable, Generator
 from datetime import datetime, timezone
@@ -21,15 +20,6 @@ from zulipchat_mcp.core import (
     RetryConfig,
     RetryStrategy,
 )
-
-
-@pytest.fixture(scope="session")
-def event_loop():
-    """Create event loop for async tests."""
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    yield loop
-    loop.close()
 
 
 @pytest.fixture

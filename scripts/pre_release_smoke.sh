@@ -9,10 +9,8 @@ Options:
   --python VERSION       Python version for wheel smoke venv (default: 3.12)
   --allow-dirty          Skip clean working tree enforcement in preflight
   --allow-existing-tag   Skip local tag-availability enforcement in preflight
-  --skip-release-md      Skip RELEASE.md version-title check in preflight
   --with-git             Also smoke-test GitHub install via uvx --from git+...
   --git-ref REF          Git ref for --with-git (default: main)
-  --with-testpypi        Also smoke-test TestPyPI install for this version
   -h, --help             Show this help text
 EOF
 }
@@ -21,10 +19,8 @@ VERSION=""
 PYTHON_VERSION="3.12"
 ALLOW_DIRTY=0
 ALLOW_EXISTING_TAG=0
-SKIP_RELEASE_MD=0
 WITH_GIT=0
 GIT_REF="main"
-WITH_TESTPYPI=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -44,10 +40,6 @@ while [[ $# -gt 0 ]]; do
       ALLOW_EXISTING_TAG=1
       shift
       ;;
-    --skip-release-md)
-      SKIP_RELEASE_MD=1
-      shift
-      ;;
     --with-git)
       WITH_GIT=1
       shift
@@ -55,10 +47,6 @@ while [[ $# -gt 0 ]]; do
     --git-ref)
       GIT_REF="${2:-}"
       shift 2
-      ;;
-    --with-testpypi)
-      WITH_TESTPYPI=1
-      shift
       ;;
     -h|--help)
       usage
@@ -88,9 +76,6 @@ fi
 if [[ "$ALLOW_EXISTING_TAG" -eq 1 ]]; then
   PREFLIGHT_ARGS+=(--allow-existing-tag)
 fi
-if [[ "$SKIP_RELEASE_MD" -eq 1 ]]; then
-  PREFLIGHT_ARGS+=(--skip-release-md)
-fi
 
 echo "==> Release preflight checklist"
 uv run python scripts/release_preflight.py "${PREFLIGHT_ARGS[@]}"
@@ -100,6 +85,9 @@ uv run zulipchat-mcp --version
 uv run zulipchat-mcp-setup --version
 uv run zulipchat-mcp-integrate --version
 uv run zulipchat-mcp-integrate list
+
+echo "==> MCP stdio smoke (project env, fake credentials)"
+uv run python scripts/mcp_stdio_smoke.py --expected-version "$VERSION" -- uv run zulipchat-mcp
 
 echo "==> Build package artifacts"
 uv build
@@ -126,20 +114,16 @@ echo "==> Installed-wheel entrypoint smoke"
 "$SMOKE_VENV/bin/zulipchat-mcp-integrate" --version
 "$SMOKE_VENV/bin/zulipchat-mcp-integrate" list
 
+echo "==> Installed-wheel MCP stdio smoke (fake credentials)"
+"$SMOKE_VENV/bin/python" scripts/mcp_stdio_smoke.py \
+  --expected-version "$VERSION" \
+  -- "$SMOKE_VENV/bin/zulipchat-mcp"
+
 if [[ "$WITH_GIT" -eq 1 ]]; then
   echo "==> GitHub install smoke (ref: $GIT_REF)"
   uvx --from "git+https://github.com/akougkas/zulipchat-mcp.git@${GIT_REF}" zulipchat-mcp --version
   uvx --from "git+https://github.com/akougkas/zulipchat-mcp.git@${GIT_REF}" zulipchat-mcp-setup --version
   uvx --from "git+https://github.com/akougkas/zulipchat-mcp.git@${GIT_REF}" zulipchat-mcp-integrate --version
-fi
-
-if [[ "$WITH_TESTPYPI" -eq 1 ]]; then
-  echo "==> TestPyPI install smoke (version: $VERSION)"
-  uvx \
-    --index-url https://test.pypi.org/simple/ \
-    --extra-index-url https://pypi.org/simple/ \
-    "zulipchat-mcp==${VERSION}" \
-    --version
 fi
 
 echo "==> Pre-release smoke completed"

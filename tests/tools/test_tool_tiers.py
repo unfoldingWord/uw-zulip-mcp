@@ -8,17 +8,23 @@ from unittest.mock import patch
 
 # --- Registration counting infrastructure ---
 
+
 class ToolCountingMCP:
     """MCP mock that counts registered tools by name."""
 
     def __init__(self):
         self._tools: dict[str, Any] = {}
 
-    def tool(self, name: str | None = None, description: str | None = None):
+    def tool(self, name: str | None = None, description: str | None = None, **kwargs):
         def _wrap(fn):
             tool_name = name or fn.__name__
-            self._tools[tool_name] = {"fn": fn, "description": description}
+            self._tools[tool_name] = {
+                "fn": fn,
+                "description": description,
+                "kwargs": kwargs,
+            }
             return fn
+
         return _wrap
 
     @property
@@ -32,14 +38,15 @@ class ToolCountingMCP:
 
 # --- Core vs Extended registration tests ---
 
+
 class TestToolRegistration:
-    def test_core_registers_exactly_19_tools(self):
+    def test_core_registers_exactly_20_tools(self):
         from zulipchat_mcp.tools import register_core_tools
 
         mcp = ToolCountingMCP()
         register_core_tools(mcp)
-        assert mcp.tool_count == 19, (
-            f"Expected 19 core tools, got {mcp.tool_count}: {sorted(mcp.tool_names)}"
+        assert mcp.tool_count == 20, (
+            f"Expected 20 core tools, got {mcp.tool_count}: {sorted(mcp.tool_names)}"
         )
 
     def test_core_tool_names(self):
@@ -49,16 +56,30 @@ class TestToolRegistration:
         register_core_tools(mcp)
         expected = {
             # Messaging (4)
-            "send_message", "edit_message", "get_message", "add_reaction",
+            "send_message",
+            "edit_message",
+            "get_message",
+            "add_reaction",
             # Search & Discovery (4)
-            "search_messages", "get_streams", "get_stream_info", "get_stream_topics",
+            "search_messages",
+            "get_streams",
+            "get_stream_info",
+            "get_stream_topics",
             # Users (3)
-            "resolve_user", "get_users", "get_own_user",
-            # Agent Communication (5)
-            "teleport_chat", "register_agent", "agent_message",
-            "request_user_input", "wait_for_response",
+            "resolve_user",
+            "get_users",
+            "get_own_user",
+            # Agent Communication (6)
+            "teleport_chat",
+            "register_agent",
+            "agent_message",
+            "request_user_input",
+            "wait_for_response",
+            "ensure_agent_session",
             # System & Flags (3)
-            "switch_identity", "server_info", "manage_message_flags",
+            "switch_identity",
+            "server_info",
+            "manage_message_flags",
         }
         assert mcp.tool_names == expected
 
@@ -73,9 +94,7 @@ class TestToolRegistration:
         total = mcp.tool_count
 
         assert total > core_count
-        # Extended adds ~38 tools on top of 19 core = ~57 total
-        assert total >= 50, f"Expected ~55+ total tools, got {total}"
-        assert total <= 65, f"Expected ~55-60 total tools, got {total}"
+        assert total == 56, f"Expected 56 total tools, got {total}"
 
     def test_no_duplicate_tool_names(self):
         """Core and extended should not register the same tool name."""
@@ -97,8 +116,11 @@ class TestToolRegistration:
         register_extended_tools(mcp)
 
         merged_tools = {
-            "get_user", "manage_user_mute", "toggle_reaction",
-            "manage_task", "afk_mode", "manage_scheduled_message",
+            "get_user",
+            "manage_user_mute",
+            "toggle_reaction",
+            "manage_task",
+            "manage_scheduled_message",
         }
         assert merged_tools.issubset(mcp.tool_names), (
             f"Missing merged tools: {merged_tools - mcp.tool_names}"
@@ -114,9 +136,10 @@ class TestToolRegistration:
 
 # --- Merged tool dispatch tests ---
 
+
 def _run(coro):
     """Helper to run async functions in tests."""
-    return asyncio.get_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
 
 
 class TestManageMessageFlags:
@@ -133,15 +156,18 @@ class TestManageMessageFlags:
         assert call_kwargs[1]["flag"] == "read"
         assert call_kwargs[1]["op"] == "add"
 
-    @patch("zulipchat_mcp.tools.mark_messaging._resolve_stream_name", return_value="general")
+    @patch(
+        "zulipchat_mcp.tools.mark_messaging._resolve_stream_name",
+        return_value="general",
+    )
     @patch("zulipchat_mcp.tools.mark_messaging.update_message_flags_for_narrow")
     def test_scope_stream(self, mock_update, mock_resolve):
         from zulipchat_mcp.tools.mark_messaging import manage_message_flags
 
         mock_update.return_value = {"status": "success"}
-        result = _run(manage_message_flags(
-            flag="read", action="add", scope="stream", stream_id=1
-        ))
+        result = _run(
+            manage_message_flags(flag="read", action="add", scope="stream", stream_id=1)
+        )
         assert result["status"] == "success"
         mock_resolve.assert_called_once_with(1)
 
@@ -152,15 +178,24 @@ class TestManageMessageFlags:
         assert result["status"] == "error"
         assert "stream_id required" in result["error"]
 
-    @patch("zulipchat_mcp.tools.mark_messaging._resolve_stream_name", return_value="general")
+    @patch(
+        "zulipchat_mcp.tools.mark_messaging._resolve_stream_name",
+        return_value="general",
+    )
     @patch("zulipchat_mcp.tools.mark_messaging.update_message_flags_for_narrow")
     def test_scope_topic(self, mock_update, mock_resolve):
         from zulipchat_mcp.tools.mark_messaging import manage_message_flags
 
         mock_update.return_value = {"status": "success"}
-        result = _run(manage_message_flags(
-            flag="starred", action="add", scope="topic", stream_id=1, topic_name="test"
-        ))
+        result = _run(
+            manage_message_flags(
+                flag="starred",
+                action="add",
+                scope="topic",
+                stream_id=1,
+                topic_name="test",
+            )
+        )
         assert result["status"] == "success"
 
     def test_scope_topic_missing_params(self):
@@ -169,9 +204,9 @@ class TestManageMessageFlags:
         result = _run(manage_message_flags(flag="read", action="add", scope="topic"))
         assert result["status"] == "error"
 
-        result = _run(manage_message_flags(
-            flag="read", action="add", scope="topic", stream_id=1
-        ))
+        result = _run(
+            manage_message_flags(flag="read", action="add", scope="topic", stream_id=1)
+        )
         assert result["status"] == "error"
         assert "topic_name required" in result["error"]
 
@@ -181,9 +216,11 @@ class TestManageMessageFlags:
 
         mock_update.return_value = {"status": "success"}
         narrow = [{"operator": "sender", "operand": "user@test.com"}]
-        result = _run(manage_message_flags(
-            flag="read", action="remove", scope="narrow", narrow=narrow
-        ))
+        result = _run(
+            manage_message_flags(
+                flag="read", action="remove", scope="narrow", narrow=narrow
+            )
+        )
         assert result["status"] == "success"
 
     def test_scope_narrow_empty(self):
@@ -210,7 +247,9 @@ class TestGetUser:
         mock_by_email.return_value = {"status": "success", "user": {"email": "a@b.com"}}
         result = _run(get_user(email="a@b.com"))
         assert result["status"] == "success"
-        mock_by_email.assert_called_once_with("a@b.com", include_custom_profile_fields=False)
+        mock_by_email.assert_called_once_with(
+            "a@b.com", include_custom_profile_fields=False
+        )
 
     def test_neither(self):
         from zulipchat_mcp.tools.users import get_user
@@ -246,7 +285,9 @@ class TestToggleReaction:
         from zulipchat_mcp.tools.emoji_messaging import toggle_reaction
 
         mock_add.return_value = {"status": "success"}
-        result = _run(toggle_reaction(message_id=1, emoji_name="thumbs_up", action="add"))
+        result = _run(
+            toggle_reaction(message_id=1, emoji_name="thumbs_up", action="add")
+        )
         assert result["status"] == "success"
         mock_add.assert_called_once()
 
@@ -255,7 +296,9 @@ class TestToggleReaction:
         from zulipchat_mcp.tools.emoji_messaging import toggle_reaction
 
         mock_remove.return_value = {"status": "success"}
-        result = _run(toggle_reaction(message_id=1, emoji_name="thumbs_up", action="remove"))
+        result = _run(
+            toggle_reaction(message_id=1, emoji_name="thumbs_up", action="remove")
+        )
         assert result["status"] == "success"
         mock_remove.assert_called_once()
 
@@ -275,7 +318,9 @@ class TestManageTask:
         from zulipchat_mcp.tools.agents import manage_task
 
         mock_update.return_value = {"status": "success"}
-        result = manage_task(action="update", task_id="t1", progress=50, status="working")
+        result = manage_task(
+            action="update", task_id="t1", progress=50, status="working"
+        )
         assert result["status"] == "success"
         mock_update.assert_called_once_with("t1", 50, "working")
 
@@ -301,37 +346,32 @@ class TestManageTask:
         assert result["status"] == "error"
 
 
-class TestAfkMode:
-    @patch("zulipchat_mcp.tools.agents.enable_afk_mode")
-    def test_enable(self, mock_enable):
-        from zulipchat_mcp.tools.agents import afk_mode
+class TestSessionTools:
+    @patch("zulipchat_mcp.tools.agents.list_sessions")
+    def test_list_instances_alias(self, mock_list_sessions):
+        from zulipchat_mcp.tools.agents import list_instances
 
-        mock_enable.return_value = {"status": "success"}
-        result = afk_mode(action="enable", hours=4, reason="lunch")
+        mock_list_sessions.return_value = {
+            "status": "success",
+            "sessions": [{"session_id": "s1"}],
+        }
+        result = list_instances()
         assert result["status"] == "success"
-        mock_enable.assert_called_once_with(4, "lunch")
+        assert result["instances"][0]["session_id"] == "s1"
 
-    @patch("zulipchat_mcp.tools.agents.disable_afk_mode")
-    def test_disable(self, mock_disable):
-        from zulipchat_mcp.tools.agents import afk_mode
+    @patch("zulipchat_mcp.tools.agents.DatabaseManager")
+    @patch("zulipchat_mcp.tools.agents._get_coordinator")
+    def test_close_agent_session(self, mock_coordinator_factory, mock_db_cls):
+        from zulipchat_mcp.tools.agents import close_agent_session
 
-        mock_disable.return_value = {"status": "success"}
-        result = afk_mode(action="disable")
+        mock_db = mock_db_cls.return_value
+        mock_db.get_agent_session.return_value = {"session_id": "s1"}
+        mock_coord = mock_coordinator_factory.return_value
+        mock_coord.send_session_message.return_value = {"status": "success"}
+
+        result = close_agent_session("s1", summary="Done")
         assert result["status"] == "success"
-
-    @patch("zulipchat_mcp.tools.agents.get_afk_status")
-    def test_status(self, mock_status):
-        from zulipchat_mcp.tools.agents import afk_mode
-
-        mock_status.return_value = {"status": "success", "afk_state": {"enabled": False}}
-        result = afk_mode(action="status")
-        assert result["status"] == "success"
-
-    def test_unknown_action(self):
-        from zulipchat_mcp.tools.agents import afk_mode
-
-        result = afk_mode(action="bogus")
-        assert result["status"] == "error"
+        mock_db.update_agent_session.assert_called_once()
 
 
 class TestManageScheduledMessage:
@@ -340,10 +380,16 @@ class TestManageScheduledMessage:
         from zulipchat_mcp.tools.schedule_messaging import manage_scheduled_message
 
         mock_create.return_value = {"status": "success", "scheduled_message_id": 1}
-        result = _run(manage_scheduled_message(
-            action="create", type="stream", to=1, content="hi",
-            scheduled_delivery_timestamp=9999999999, topic="test",
-        ))
+        result = _run(
+            manage_scheduled_message(
+                action="create",
+                type="stream",
+                to=1,
+                content="hi",
+                scheduled_delivery_timestamp=9999999999,
+                topic="test",
+            )
+        )
         assert result["status"] == "success"
         mock_create.assert_called_once()
 
@@ -359,9 +405,11 @@ class TestManageScheduledMessage:
         from zulipchat_mcp.tools.schedule_messaging import manage_scheduled_message
 
         mock_update.return_value = {"status": "success"}
-        result = _run(manage_scheduled_message(
-            action="update", scheduled_message_id=1, content="updated"
-        ))
+        result = _run(
+            manage_scheduled_message(
+                action="update", scheduled_message_id=1, content="updated"
+            )
+        )
         assert result["status"] == "success"
 
     def test_update_missing_id(self):

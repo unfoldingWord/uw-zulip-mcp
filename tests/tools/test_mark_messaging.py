@@ -28,7 +28,9 @@ class TestResolveStreamName:
         """Patch dependencies for stream resolution."""
         mock_client = MagicMock()
         with (
-            patch("src.zulipchat_mcp.tools.mark_messaging.get_client") as mock_get_client,
+            patch(
+                "src.zulipchat_mcp.tools.mark_messaging.get_client"
+            ) as mock_get_client,
         ):
             mock_get_client.return_value = mock_client
             yield mock_client
@@ -99,7 +101,9 @@ class TestUpdateMessageFlagsForNarrow:
     def mock_deps(self, mock_client):
         """Patch dependencies."""
         with (
-            patch("src.zulipchat_mcp.tools.mark_messaging.get_client") as mock_get_client,
+            patch(
+                "src.zulipchat_mcp.tools.mark_messaging.get_client"
+            ) as mock_get_client,
         ):
             mock_get_client.return_value = mock_client
             yield mock_client
@@ -175,9 +179,7 @@ class TestUpdateMessageFlagsForNarrow:
         """Test exception handling in update_message_flags_for_narrow."""
         mock_deps.client.call_endpoint.side_effect = Exception("Network error")
 
-        result = await update_message_flags_for_narrow(
-            narrow=[], op="add", flag="read"
-        )
+        result = await update_message_flags_for_narrow(narrow=[], op="add", flag="read")
 
         assert result["status"] == "error"
         assert "Network error" in result["error"]
@@ -189,9 +191,7 @@ class TestUpdateMessageFlagsForNarrow:
             "result": "success",
         }
 
-        result = await update_message_flags_for_narrow(
-            narrow=[], op="add", flag="read"
-        )
+        result = await update_message_flags_for_narrow(narrow=[], op="add", flag="read")
 
         assert result["status"] == "success"
         assert result["processed_count"] == 0
@@ -215,7 +215,9 @@ class TestMarkAllAsRead:
             "updated_count": 50,
         }
         with (
-            patch("src.zulipchat_mcp.tools.mark_messaging.get_client") as mock_get_client,
+            patch(
+                "src.zulipchat_mcp.tools.mark_messaging.get_client"
+            ) as mock_get_client,
         ):
             mock_get_client.return_value = mock_client
             yield mock_client
@@ -284,7 +286,9 @@ class TestMarkTopicAsRead:
     def mock_deps(self, mock_client):
         """Patch dependencies."""
         with (
-            patch("src.zulipchat_mcp.tools.mark_messaging.get_client") as mock_get_client,
+            patch(
+                "src.zulipchat_mcp.tools.mark_messaging.get_client"
+            ) as mock_get_client,
         ):
             mock_get_client.return_value = mock_client
             yield mock_client
@@ -352,7 +356,9 @@ class TestMarkMessagesUnread:
     def mock_deps(self, mock_client):
         """Patch dependencies."""
         with (
-            patch("src.zulipchat_mcp.tools.mark_messaging.get_client") as mock_get_client,
+            patch(
+                "src.zulipchat_mcp.tools.mark_messaging.get_client"
+            ) as mock_get_client,
         ):
             mock_get_client.return_value = mock_client
             yield mock_client
@@ -494,7 +500,9 @@ class TestStarMessages:
     def mock_deps(self, mock_client):
         """Patch dependencies."""
         with (
-            patch("src.zulipchat_mcp.tools.mark_messaging.get_client") as mock_get_client,
+            patch(
+                "src.zulipchat_mcp.tools.mark_messaging.get_client"
+            ) as mock_get_client,
         ):
             mock_get_client.return_value = mock_client
             yield mock_client
@@ -613,7 +621,9 @@ class TestUnstarMessages:
     def mock_deps(self, mock_client):
         """Patch dependencies."""
         with (
-            patch("src.zulipchat_mcp.tools.mark_messaging.get_client") as mock_get_client,
+            patch(
+                "src.zulipchat_mcp.tools.mark_messaging.get_client"
+            ) as mock_get_client,
         ):
             mock_get_client.return_value = mock_client
             yield mock_client
