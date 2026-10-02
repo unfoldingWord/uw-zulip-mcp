@@ -68,9 +68,11 @@ jobs:
               print(f"::error::server.json top-level version mismatch: expected {expected}, got {top}")
               sys.exit(1)
 
+          # No packages declared (Docker-only distribution) is valid; enforce
+          # version alignment only when packages are present.
           packages = data.get("packages", [])
           pkg_versions = {pkg.get("version") for pkg in packages if pkg.get("version")}
-          if pkg_versions != {expected}:
+          if pkg_versions and pkg_versions != {expected}:
               print(
                   "::error::server.json package version mismatch: "
                   f"expected only {expected}, got {sorted(pkg_versions)}"
