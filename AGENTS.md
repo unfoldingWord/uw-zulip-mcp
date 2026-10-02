@@ -3,7 +3,7 @@
 Single source of truth for working in this repository. `CLAUDE.md` is a link to
 this file, so guidance stays in one place for every assistant and contributor.
 
-## Current Status (v0.7.1)
+## Current Status (v0.8.0)
 
 **Distribution**: Docker image `unfoldingword/zulipchat-mcp` on Docker Hub (`latest` = develop, `stable` = latest release). Local/dev run from source: `uvx --from git+https://github.com/akougkas/zulipchat-mcp.git zulipchat-mcp`. This fork does not publish to PyPI.
 

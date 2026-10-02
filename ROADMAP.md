@@ -1,6 +1,6 @@
 # Roadmap
 
-## v0.7.1 (Current)
+## v0.8.0 (Current)
 
 Released 2026-05-11 — Docker image `unfoldingword/zulipchat-mcp`
 
