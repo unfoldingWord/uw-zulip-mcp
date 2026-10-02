@@ -2,13 +2,13 @@
 
 ## v0.8.0 (Current)
 
-Released 2026-05-11 — Docker image `unfoldingword/zulipchat-mcp`
+Released 2026-10-02 — Docker image `unfoldingword/zulipchat-mcp`
 
 **Highlights:**
-- Teleport-Chat: bidirectional agent-human DMs with identity-aware routing
-- Fuzzy user resolution (`resolve_user` tool)
-- Always-on message listener (DMs + streams)
-- AFK auto-return enforcement
+- OAuth2-only hosted mode with an OpenBao/Vault-backed per-user key store
+- Docker deploy pipeline: `develop` → `latest`, release tags → `stable` + semver
+- Hardened image (Wolfi base, non-root) and a full dependency refresh (FastMCP 3.4.7)
+- Removed PyPI publishing; ships as a Docker image only
 
 ## Planned (Next)
 

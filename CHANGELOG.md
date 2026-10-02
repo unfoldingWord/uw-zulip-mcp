@@ -2,17 +2,28 @@
 
 All notable changes to ZulipChat MCP are documented in this file.
 
-## [Unreleased]
+## [0.8.0] - 2026-10-02
 
 ### Added
 - **OAuth2-only hosted mode with a vault-backed key store** — clients authenticate with OAuth only; the server derives the user's email from the validated OAuth token and resolves that user's Zulip API key from an OpenBao/Vault KV v2 store, cached in memory with a sliding one-day inactivity TTL. On first contact the user is sent to a signed `/enroll` web page (served by the same server) to add their key once; the key is validated against Zulip and stored only if its Zulip email matches the OAuth identity. Wrong keys are rejected and never stored, with a configurable cool-off after repeated failures. New config: `OPENBAO_*`, `ZULIPCHAT_ENROLL_*`, `ZULIPCHAT_KEY_CACHE_TTL_SECONDS`, `ZULIPCHAT_PUBLIC_URL`. Per-identity cache scoping and audit-by-email are preserved, so users stay isolated.
 - **Hosted multi-user mode with client-side credential injection** — `--hosted` / `ZULIPCHAT_HOSTED=1`. The Zulip site stays pinned server-side (`ZULIP_SITE`) so clients cannot redirect credentials to another host. Stream/user/message caches are scoped per identity so one user's visible data is never served to another. Audit events are stamped with the requesting user's email.
 - **OAuth 2.1 for the user → MCP server hop** — env-driven auth provider (`ZULIPCHAT_AUTH_MODE`: `google`, `oidc`, `jwt`, or `static` for dev), powered by FastMCP's auth providers. In OAuth2-only mode the OAuth email identifies the user for the vault lookup.
+- **Docker deployment pipeline** — pushes to `develop` publish the `latest` image; release tags `vX.Y.Z` publish `X.Y.Z` / `X.Y` / `stable` to Docker Hub (build/tag/push only).
+- **OpenBao/Vault private-CA support** (`OPENBAO_CACERT`) — trust OpenBao TLS certificates signed by an internal CA (root + intermediates in a PEM).
+- **OpenBao startup self-check** — logs CA-file readability, TLS reachability, and auth at boot; `OPENBAO_STARTUP_REQUIRED=true` makes a failed check abort startup (default: log and continue).
 - New docs: [Hosted Mode & Authentication](docs/user-guide/hosted-authentication.md) with threat model, Claude Code setup, and deployment requirements.
 
 ### Changed
 - **Retired the `X-Zulip-*` credential header path.** Hosted mode now sources the user's key from OAuth identity + vault rather than per-request headers. The reusable plumbing (request-scoped credential binding, per-identity cache scope) is unchanged; only the credential source moved.
 - **Merged upstream v0.7.1** — Brings in the agent control plane (session-scoped agent tools, `ensure_agent_session`, `list_sessions`, `close_agent_session`), Claude Code plugin, explicit FastMCP task support for long-running tools, and lifespan-managed background services. All uW fork hardening (channel filtering, read-only mode, agent disabling, audit logging, configurable transport) is preserved. AFK mode tools are removed upstream; the session model replaces them.
+- **Hardened the Docker image** — built on the Wolfi base (`cgr.dev/chainguard/wolfi-base`, minimal CVE surface) and runs as a non-root user (uid 65532).
+- **Switched code formatting from Black to Ruff** — `ruff format` plus `ruff check`; Black is removed.
+
+### Dependencies
+- Upgraded all Python dependencies to current versions, pinning FastMCP to the latest 3.x (3.4.7) and picking up upstream security fixes.
+
+### Removed
+- **PyPI publishing** — this fork ships only the Docker image. Removed `twine`, the PyPI package entry in `server.json`, and the TestPyPI smoke steps.
 
 ## [0.7.1] - 2026-05-11
 
