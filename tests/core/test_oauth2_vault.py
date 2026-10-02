@@ -408,6 +408,18 @@ def test_enroll_get_valid_token_shows_form(monkeypatch):
     assert resp.headers.get("Cache-Control") == "no-store"
 
 
+def test_enroll_form_shows_expiry(monkeypatch):
+    from starlette.testclient import TestClient
+
+    monkeypatch.setenv("ZULIPCHAT_ENROLL_SECRET", SECRET)
+    tok = mint_enrollment_token("u@x.org")  # default TTL (15 min)
+    resp = TestClient(_enroll_app()).get(f"/enroll?token={tok}")
+    assert resp.status_code == 200
+    assert "expires at" in resp.text
+    assert "UTC" in resp.text
+    assert "minute" in resp.text
+
+
 def test_enroll_post_success(monkeypatch):
     from unittest.mock import AsyncMock, MagicMock
 

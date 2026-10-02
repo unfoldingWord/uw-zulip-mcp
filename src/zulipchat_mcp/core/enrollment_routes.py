@@ -9,6 +9,9 @@ Zulip site is always taken from server config, never from the client.
 from __future__ import annotations
 
 import html
+import math
+import time
+from datetime import datetime, timezone
 
 from starlette.requests import Request
 from starlette.responses import HTMLResponse
@@ -88,11 +91,29 @@ def _used_link_page() -> HTMLResponse:
     )
 
 
+def _expiry_notice(token: str) -> str:
+    """A muted line stating when this link expires, or '' if not determinable."""
+    expiry = enrollment_token_expiry(token)
+    if expiry is None:
+        return ""
+    remaining = expiry - time.time()
+    if remaining <= 0:
+        return ""
+    mins = math.ceil(remaining / 60)
+    at = datetime.fromtimestamp(expiry, tz=timezone.utc).strftime("%H:%M UTC")
+    return (
+        f"<p class='muted'>This link expires at {at} "
+        f"(in about {mins} minute{'s' if mins != 1 else ''}). After that, run any "
+        "Zulip tool again to get a fresh one.</p>"
+    )
+
+
 def _form_page(email: str, token: str, *, error: str | None = None) -> HTMLResponse:
     err_html = f"<p class='err'>{html.escape(error)}</p>" if error else ""
     body = f"""
     <p>Signed in as <strong>{html.escape(email)}</strong>.</p>
     <p>To let this server act in Zulip as you, add your personal Zulip API key.</p>
+    {_expiry_notice(token)}
     <ol>
       <li>In Zulip, open <strong>Personal settings → Account &amp; privacy</strong>.</li>
       <li>Under <strong>API key</strong>, click <strong>Show/change your API key</strong>.</li>
