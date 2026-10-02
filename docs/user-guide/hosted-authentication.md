@@ -45,9 +45,10 @@ from the vault (cached in memory) automatically.
   external collaborators. With neither set, every authenticated identity is
   rejected (so you must configure it). Non-allowed identities are turned away
   **before** any vault access, on both the tool path and the enrollment page,
-  so they cannot even drive a vault lookup. This is defense in depth — also
-  restrict the OAuth app itself (e.g. a Google Workspace internal app) so
-  non-org accounts cannot complete login at all.
+  so they cannot even drive a vault lookup. The OAuth app is a separate,
+  earlier gate — if you have no external collaborators, an Internal Google app
+  blocks non-org accounts outright; if you do, see
+  [The Google OAuth app and the allowlist are two different gates](#the-google-oauth-app-and-the-allowlist-are-two-different-gates).
 - **Zulip site: pinned server-side** (`ZULIP_SITE`). Clients cannot point the
   server at another host.
 - **Org bot key: server-side env/zuliprc**, unchanged, for the agent control
@@ -112,8 +113,45 @@ identities are turned away **before any vault lookup**, on both the tool path
 ("not authorized to use this server") and the enrollment page (HTTP 403). The
 gate is **fail-closed**: if **both** variables are unset, every authenticated
 identity is **rejected**, and the server logs a warning at startup — you must
-set at least one for the server to be usable. This is in addition to, not a
-replacement for, restricting the OAuth app itself.
+set at least one for the server to be usable.
+
+#### The Google OAuth app and the allowlist are two different gates
+
+They stack, and the OAuth app runs **first**. The allowlist can only *narrow*
+who the OAuth app already admitted — it can never *widen* it. So if the OAuth
+app rejects an account, adding that address to `ZULIPCHAT_ALLOWED_EMAILS` has no
+effect.
+
+This matters for **external collaborators** (e.g. a `@gmail.com` address). How
+Google's app type gates users:
+
+| Google OAuth app | Who can authenticate | Per-user maintenance |
+|------------------|----------------------|----------------------|
+| **Internal** | Only accounts in your Google Workspace org | None — externals are simply blocked (you'll see *"Access blocked: … can only be used within its organization"*) |
+| **External + Testing** | Only addresses on the **Test users** list (max 100) — this gates **everyone**, so org members must be listed too | High — you'd maintain your whole org on Google |
+| **External + In production** | Any Google account | None on Google's side |
+
+With an **Internal** app you cannot admit a `@gmail.com` collaborator at all,
+and **External + Testing** forces you to list your entire org on Google as well
+as in the app — two lists, the larger one on Google.
+
+**Recommended for org + a few externals:** set the Google app to **External, In
+production**. The scopes here (`openid email profile`) are non-sensitive, so
+Google requires **no app-verification review** to publish. Then the app
+allowlist is your **single source of truth**:
+
+- Org members — admitted by Google, allowed by `ZULIPCHAT_ALLOWED_EMAIL_DOMAINS`
+  (your org domain). No per-user upkeep.
+- External collaborators — added to `ZULIPCHAT_ALLOWED_EMAILS` only. One place.
+- Everyone else — rejected by the fail-closed allowlist, before any vault access.
+
+The trade-off: Google no longer restricts *who can authenticate*, so the
+allowlist becomes the sole gate (fail-closed, so this is safe — but review that
+one setting carefully; a too-broad domain would admit unintended accounts). If
+you need Google to keep fencing too but still admit a specific external, the
+only clean way is to give that person a guest/Cloud Identity account in your
+Workspace so they count as internal — heavier than one `ZULIPCHAT_ALLOWED_EMAILS`
+entry, and rarely worth it.
 
 ## OpenBao / Vault
 
