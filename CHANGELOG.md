@@ -11,6 +11,7 @@ All notable changes to ZulipChat MCP are documented in this file.
 
 ### Fixed
 - **Static browser-tab title on the enrollment pages** — the `<title>` is now a constant ("ZulipChat MCP — Enrollment") instead of changing per page state; the visible per-state heading is unchanged.
+- **Corrected the hosted-mode startup banner** — it claimed "per-request credentials, nothing stored server-side", which is no longer true under the OAuth2 + vault model. It now reads "OAuth2 identity; per-user Zulip keys stored in OpenBao/Vault" and shows whether the vault is configured.
 
 ### Changed
 - The AppRole OpenBao policy now also needs `delete` on the KV v2 **metadata** path (`<mount>/metadata/<path>/*`) so a rejected key can be purged on rotation. Not required when `ZULIPCHAT_REENROLL_ON_AUTH_FAILURE=false`.

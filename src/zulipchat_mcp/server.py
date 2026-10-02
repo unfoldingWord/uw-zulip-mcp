@@ -425,8 +425,11 @@ def main() -> None:
             f"  Agent tools:     {'disabled' if disable_agents else 'enabled'}"
         )
         if hosted:
-            lines.append("  Hosted mode:     YES (per-request credentials,")
-            lines.append("                   nothing stored server-side)")
+            lines.append("  Hosted mode:     YES (OAuth2 identity; per-user")
+            lines.append("                   Zulip keys stored in OpenBao/Vault)")
+            lines.append(
+                f"  Vault:           {'configured' if hosted_config.vault_enabled() else 'NOT configured'}"
+            )
             lines.append(
                 f"  Server auth:     {os.getenv('ZULIPCHAT_AUTH_MODE', 'none')}"
             )
