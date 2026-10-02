@@ -170,11 +170,30 @@ Notes:
 |----------|---------|---------|
 | `ZULIPCHAT_ENROLL_SECRET` | random per-process | HMAC secret for enrollment links. Set this in production so links survive restarts and work across replicas. |
 | `ZULIPCHAT_PUBLIC_URL` | `ZULIPCHAT_AUTH_BASE_URL` | Public URL used to build enrollment links |
-| `ZULIPCHAT_ENROLL_TOKEN_TTL_SECONDS` | `900` | Enrollment link lifetime |
+| `ZULIPCHAT_ENROLL_TOKEN_TTL_SECONDS` | `900` | Enrollment link lifetime (seconds from when the link is minted) |
 | `ZULIPCHAT_ENROLL_MAX_ATTEMPTS` | `6` | Failed submissions before a cool-off |
 | `ZULIPCHAT_ENROLL_COOLOFF_SECONDS` | `900` | Cool-off duration after too many failures |
 | `ZULIPCHAT_KEY_CACHE_TTL_SECONDS` | `86400` | In-memory key cache inactivity TTL |
 | `ZULIPCHAT_REENROLL_ON_AUTH_FAILURE` | `true` | When Zulip rejects a stored key, clear it (cache + vault) and return a fresh `/enroll` link on that same call. Set `false` to keep the stale key and only surface Zulip's error. |
+
+**Link lifetime and single use.** An enrollment link is valid for
+`ZULIPCHAT_ENROLL_TOKEN_TTL_SECONDS` (default 15 minutes) counted from when it
+is minted — i.e. from the tool call that handed it out, not from when the user
+opens it. Each link is **single-use**: it is consumed once a key is
+successfully saved, after which opening or submitting it again shows a "link
+already used" page. A failed submission (wrong key, email mismatch, upstream
+error) does **not** consume the link, so the user can retry within the window.
+To enroll again (e.g. after a key rotation), run any Zulip tool to get a fresh
+link. The consumed-link record is in-memory per replica, like the cool-off
+counters, with two limits that only a shared/persistent store removes:
+
+- **Multi-replica:** a link used on one replica is not known to the others, so
+  back the record with a shared store to enforce single use across replicas.
+- **Restart:** the records are lost on restart. With a random per-process
+  `ZULIPCHAT_ENROLL_SECRET` this is harmless (old links also stop verifying
+  after a restart). But with a **stable** `ZULIPCHAT_ENROLL_SECRET` — the
+  recommended setting so links survive restarts — an already-used link that is
+  still within its lifetime can be used again after a restart, until it expires.
 
 ## Client setup (Claude Code)
 

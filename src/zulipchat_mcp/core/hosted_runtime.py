@@ -8,13 +8,14 @@ can inject fakes via the ``set_*`` helpers and restore with ``reset``.
 from __future__ import annotations
 
 from . import hosted_config
-from .enrollment import CoolOff
+from .enrollment import CoolOff, UsedTokens
 from .key_cache import SlidingKeyCache
 from .secret_store import SecretStore
 
 _store: SecretStore | None = None
 _cache: SlidingKeyCache | None = None
 _cooloff: CoolOff | None = None
+_used_tokens: UsedTokens | None = None
 
 
 def get_secret_store() -> SecretStore:
@@ -38,6 +39,13 @@ def get_cooloff() -> CoolOff:
     return _cooloff
 
 
+def get_used_tokens() -> UsedTokens:
+    global _used_tokens
+    if _used_tokens is None:
+        _used_tokens = UsedTokens()
+    return _used_tokens
+
+
 def set_secret_store(store: SecretStore | None) -> None:
     global _store
     _store = store
@@ -53,9 +61,15 @@ def set_cooloff(cooloff: CoolOff | None) -> None:
     _cooloff = cooloff
 
 
+def set_used_tokens(used_tokens: UsedTokens | None) -> None:
+    global _used_tokens
+    _used_tokens = used_tokens
+
+
 def reset() -> None:
     """Clear all singletons (used by tests)."""
-    global _store, _cache, _cooloff
+    global _store, _cache, _cooloff, _used_tokens
     _store = None
     _cache = None
     _cooloff = None
+    _used_tokens = None

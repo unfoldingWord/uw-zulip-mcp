@@ -16,7 +16,12 @@ from starlette.responses import HTMLResponse
 from ..config import get_config_manager
 from ..utils.logging import get_logger
 from . import hosted_runtime
-from .enrollment import EnrollOutcome, try_enroll, verify_enrollment_token
+from .enrollment import (
+    EnrollOutcome,
+    enrollment_token_expiry,
+    try_enroll,
+    verify_enrollment_token,
+)
 
 logger = get_logger(__name__)
 
@@ -73,6 +78,16 @@ def _invalid_link_page() -> HTMLResponse:
     )
 
 
+def _used_link_page() -> HTMLResponse:
+    return _page(
+        "Link already used",
+        "<p class='err'>This enrollment link has already been used.</p>"
+        "<p>Each link works once. To add or update your key, return to your MCP "
+        "client and run any Zulip tool again to get a fresh link.</p>",
+        status=400,
+    )
+
+
 def _form_page(email: str, token: str, *, error: str | None = None) -> HTMLResponse:
     err_html = f"<p class='err'>{html.escape(error)}</p>" if error else ""
     body = f"""
@@ -102,6 +117,8 @@ async def enroll_get(request: Request) -> HTMLResponse:
     email = verify_enrollment_token(token)
     if not email:
         return _invalid_link_page()
+    if hosted_runtime.get_used_tokens().is_used(token):
+        return _used_link_page()
     return _form_page(email, token)
 
 
@@ -112,6 +129,8 @@ async def enroll_post(request: Request) -> HTMLResponse:
     email = verify_enrollment_token(token)
     if not email:
         return _invalid_link_page()
+    if hosted_runtime.get_used_tokens().is_used(token):
+        return _used_link_page()
 
     if not api_key:
         return _form_page(email, token, error="Please enter your API key.")
@@ -136,6 +155,12 @@ async def enroll_post(request: Request) -> HTMLResponse:
     )
 
     if result.outcome is EnrollOutcome.SUCCESS:
+        # Consume the link so it cannot be replayed. Bound the record by the
+        # token's own expiry; if that cannot be parsed, skip (the token will
+        # still expire on its own and verify will then reject it).
+        expiry = enrollment_token_expiry(token)
+        if expiry is not None:
+            hosted_runtime.get_used_tokens().mark_used(token, expiry)
         return _page(
             "All set",
             "<p class='ok'>Your Zulip API key has been saved.</p>"

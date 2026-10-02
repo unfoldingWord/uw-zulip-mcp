@@ -6,6 +6,10 @@ All notable changes to ZulipChat MCP are documented in this file.
 
 ### Added
 - **Automatic re-enrollment on Zulip key rotation (hosted mode)** — when Zulip rejects a user's stored API key (they rotated or revoked it), the server detects the `UNAUTHORIZED` response, clears the key from the in-memory cache and the vault, and returns a fresh `/enroll` link in the same response so the user can add their new key. Previously the stale key kept being used until the cache TTL expired or the process restarted. Controlled by the new `ZULIPCHAT_REENROLL_ON_AUTH_FAILURE` (default `true`); set `false` to keep the old manual flow (surface Zulip's error, operator deletes the key).
+- **Single-use enrollment links** — an `/enroll` link is now consumed once a key is successfully saved; opening or submitting it again shows a "link already used" page. Failed submissions do not consume the link, so a user can still retry a wrong key within the link's lifetime. The consumed-link record is in-memory per replica (like the cool-off counters) and bounded by the token's own expiry.
+
+### Changed
+- The AppRole OpenBao policy now also needs `delete` on the KV v2 **metadata** path (`<mount>/metadata/<path>/*`) so a rejected key can be purged on rotation. Not required when `ZULIPCHAT_REENROLL_ON_AUTH_FAILURE=false`.
 
 ## [0.8.0] - 2026-10-02
 

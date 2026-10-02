@@ -88,6 +88,83 @@ def verify_enrollment_token(token: str, *, secret: str | None = None) -> str | N
     return email
 
 
+def enrollment_token_expiry(token: str) -> int | None:
+    """Expiry (epoch seconds) encoded in a token, or None if unparseable.
+
+    Does not check the signature — call ``verify_enrollment_token`` first. Used
+    to bound how long a consumed-token record must be kept (see UsedTokens).
+    """
+    try:
+        payload_b64, _sig_b64 = token.split(".", 1)
+        _email, expiry_s = _b64u_decode(payload_b64).decode().rsplit("|", 1)
+        return int(expiry_s)
+    except Exception:
+        return None
+
+
+# --- single-use enrollment links ------------------------------------------
+
+
+class UsedTokens:
+    """Records enrollment tokens already consumed, so each link enrolls once.
+
+    A token is consumed only on a *successful* enrollment; page views and failed
+    submissions do not consume it, so a user can still retry a wrong key within
+    the link's lifetime. Each record is kept until the token's own expiry (after
+    which the token is rejected anyway) and swept lazily, so the map stays small.
+
+    In-memory and per-process, like CoolOff. Two caveats follow from that, both
+    fixed only by a shared/persistent store (e.g. Redis):
+
+    - **Multi-replica:** a token consumed on one replica is not known to the
+      others, so the same link can be used once per replica.
+    - **Restart:** these records are lost on restart. With a random per-process
+      ``ZULIPCHAT_ENROLL_SECRET`` that is harmless (every old token also fails
+      signature verification after restart). But with a *stable* secret — the
+      recommended production setting so links survive restarts — an
+      already-consumed link that is still within its TTL becomes usable again
+      after a restart, for the remainder of that window.
+
+    A narrow race remains even with a shared store: two submissions of the same
+    link that overlap in time can both succeed, because consumption is recorded
+    only after enrollment succeeds. This guards against sequential reuse (link
+    replay), which is the real threat.
+    """
+
+    def __init__(self) -> None:
+        self._used: dict[str, float] = {}  # token id -> token expiry (epoch)
+        self._lock = threading.Lock()
+
+    @staticmethod
+    def _id(token: str) -> str:
+        return hashlib.sha256(token.encode()).hexdigest()
+
+    def _sweep_locked(self, now: float) -> None:
+        stale = [tid for tid, exp in self._used.items() if now >= exp]
+        for tid in stale:
+            del self._used[tid]
+
+    def is_used(self, token: str) -> bool:
+        """True if ``token`` was already consumed and has not itself expired."""
+        now = time.time()
+        tid = self._id(token)
+        with self._lock:
+            exp = self._used.get(tid)
+            if exp is None:
+                return False
+            if now >= exp:
+                del self._used[tid]
+                return False
+            return True
+
+    def mark_used(self, token: str, expiry: float) -> None:
+        """Record ``token`` as consumed until ``expiry`` (epoch seconds)."""
+        now = time.time()
+        with self._lock:
+            self._sweep_locked(now)
+            self._used[self._id(token)] = expiry
+
+
 # --- cool-off (brute-force guard) -----------------------------------------
 
 

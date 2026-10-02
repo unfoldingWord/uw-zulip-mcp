@@ -10,6 +10,8 @@ from src.zulipchat_mcp.core.enrollment import (
     CoolOff,
     EnrollOutcome,
     EnrollResult,
+    UsedTokens,
+    enrollment_token_expiry,
     mint_enrollment_token,
     try_enroll,
     verify_enrollment_token,
@@ -438,6 +440,113 @@ def test_enroll_post_invalid_token_rejected(monkeypatch):
         "/enroll", data={"token": "bad", "api_key": "a" * 32}
     )
     assert resp.status_code == 400
+
+
+# --- single-use links ------------------------------------------------------
+
+
+def test_used_tokens_marks_and_expires():
+    import time
+
+    ut = UsedTokens()
+    assert ut.is_used("tok") is False
+    ut.mark_used("tok", expiry=time.time() + 100)
+    assert ut.is_used("tok") is True
+    # Other tokens are unaffected.
+    assert ut.is_used("other") is False
+
+
+def test_used_tokens_record_expires_with_token():
+    import time
+
+    ut = UsedTokens()
+    ut.mark_used("tok", expiry=time.time() - 1)  # already past
+    assert ut.is_used("tok") is False  # expired record is swept
+
+
+def test_enrollment_token_expiry_roundtrip(monkeypatch):
+    monkeypatch.setenv("ZULIPCHAT_ENROLL_SECRET", SECRET)
+    tok = mint_enrollment_token("u@x.org", secret=SECRET, ttl_seconds=900)
+    exp = enrollment_token_expiry(tok)
+    assert exp is not None and exp > 0
+    assert enrollment_token_expiry("garbage") is None
+
+
+def _post_success_app(monkeypatch):
+    """Enroll app whose try_enroll always succeeds; returns (TestClient, token)."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    from starlette.testclient import TestClient
+
+    from src.zulipchat_mcp.core import enrollment_routes
+
+    monkeypatch.setenv("ZULIPCHAT_ENROLL_SECRET", SECRET)
+    tok = mint_enrollment_token("u@x.org")
+    cfg = MagicMock()
+    cfg.config.site = "https://z.example"
+    monkeypatch.setattr(enrollment_routes, "get_config_manager", lambda: cfg)
+    monkeypatch.setattr(
+        enrollment_routes,
+        "try_enroll",
+        AsyncMock(return_value=EnrollResult(EnrollOutcome.SUCCESS, "ok")),
+    )
+    return TestClient(_enroll_app()), tok
+
+
+def test_enroll_link_single_use_post(monkeypatch):
+    client, tok = _post_success_app(monkeypatch)
+
+    first = client.post("/enroll", data={"token": tok, "api_key": "a" * 32})
+    assert first.status_code == 200
+    assert "saved" in first.text.lower()
+
+    # Same link again: rejected as already used.
+    second = client.post("/enroll", data={"token": tok, "api_key": "a" * 32})
+    assert second.status_code == 400
+    assert "already been used" in second.text.lower()
+
+
+def test_enroll_used_link_get_shows_used_page(monkeypatch):
+    client, tok = _post_success_app(monkeypatch)
+    client.post("/enroll", data={"token": tok, "api_key": "a" * 32})
+
+    resp = client.get(f"/enroll?token={tok}")
+    assert resp.status_code == 400
+    assert "already been used" in resp.text.lower()
+
+
+def test_enroll_failed_attempt_does_not_consume(monkeypatch):
+    from unittest.mock import AsyncMock, MagicMock
+
+    from starlette.testclient import TestClient
+
+    from src.zulipchat_mcp.core import enrollment_routes
+
+    monkeypatch.setenv("ZULIPCHAT_ENROLL_SECRET", SECRET)
+    tok = mint_enrollment_token("u@x.org")
+    cfg = MagicMock()
+    cfg.config.site = "https://z.example"
+    monkeypatch.setattr(enrollment_routes, "get_config_manager", lambda: cfg)
+    # First a rejection, then a success — the link must survive the rejection.
+    monkeypatch.setattr(
+        enrollment_routes,
+        "try_enroll",
+        AsyncMock(
+            side_effect=[
+                EnrollResult(EnrollOutcome.INVALID_KEY, "bad", remaining_tries=5),
+                EnrollResult(EnrollOutcome.SUCCESS, "ok"),
+            ]
+        ),
+    )
+    client = TestClient(_enroll_app())
+
+    bad = client.post("/enroll", data={"token": tok, "api_key": "a" * 32})
+    assert bad.status_code == 200  # form re-shown with an error, link not consumed
+    assert "already been used" not in bad.text.lower()
+
+    good = client.post("/enroll", data={"token": tok, "api_key": "a" * 32})
+    assert good.status_code == 200
+    assert "saved" in good.text.lower()
 
 
 # --- auth scopes -----------------------------------------------------------
