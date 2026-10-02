@@ -105,7 +105,22 @@ Each user's key is stored at `<mount>/data/<path>/<sha256(email)>`. The hash
 keeps the path clean and avoids listing everyone's email; operators can still
 map an email to its path by hashing the address the same way.
 
-The AppRole policy only needs create/read/update on that path prefix.
+The AppRole policy needs `create`/`read`/`update` on the **data** path prefix,
+plus `delete` on the matching **metadata** path so a rejected key can be purged
+(see "Automatic re-enrollment" below). With the default mount/path:
+
+```hcl
+path "secret/data/zulip-mcp/users/*" {
+  capabilities = ["create", "read", "update"]
+}
+
+path "secret/metadata/zulip-mcp/users/*" {
+  capabilities = ["delete"]
+}
+```
+
+If `ZULIPCHAT_REENROLL_ON_AUTH_FAILURE=false`, the `delete` rule is not needed
+(the server never purges keys automatically).
 
 ### Private / internal CA
 
@@ -181,6 +196,18 @@ off, use the manual flow and have an operator delete the stale key from the
 vault.) Across multiple replicas the deletion is shared, but another replica
 that still has the old key cached will clear it the first time it, too, hits the
 rejection.
+
+> **Known limitation (unverified):** the auto-purge triggers only when Zulip's
+> error response carries `code == "UNAUTHORIZED"` (how a rotated/invalid key is
+> reported). A **deactivated** Zulip account may return a *different* code (e.g.
+> `USER_DEACTIVATED` / `REALM_DEACTIVATED`), in which case the key is **not**
+> purged automatically and an operator must delete it from the vault manually.
+> We have not confirmed the exact codes/HTTP status Zulip returns for these
+> cases against a live server. A more robust detection would key off the HTTP
+> `401` status (which covers invalid-key *and* deactivation uniformly) rather
+> than the `code` string — see `_looks_like_auth_failure` in
+> `core/client.py`. Note 403 must be excluded: in Zulip it means "authenticated
+> but not authorized", i.e. the key is still valid.
 
 ## Deployment requirements
 
