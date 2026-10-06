@@ -479,7 +479,14 @@ def main() -> None:
     else:
         host = args.host or os.getenv("ZULIPCHAT_HOST", "127.0.0.1")
         port = args.port or config_manager.config.port  # MCP_PORT env var, default 3000
-        mcp.run(transport=transport, host=host, port=port)
+        # log_config=None stops Uvicorn installing its own handlers, so its
+        # loggers propagate to our root handler and render as JSON like the rest.
+        mcp.run(
+            transport=transport,
+            host=host,
+            port=port,
+            uvicorn_config={"log_config": None},
+        )
 
 
 if __name__ == "__main__":
