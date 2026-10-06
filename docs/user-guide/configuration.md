@@ -182,6 +182,40 @@ Full guide: [Hosted Mode & Authentication](hosted-authentication.md).
 |----------|---------|-------------|
 | `ZULIPCHAT_QUIET` | `false` | Suppress startup privacy notice |
 | `MCP_DEBUG` | `false` | Debug logging |
+| `ZULIPCHAT_DB_PATH` | `.mcp/zulipchat/zulipchat.duckdb` | Path to the local DuckDB file (relative to the working directory). See [Local state & persistence](#local-state--persistence) |
+
+## Local state & persistence
+
+The server keeps a small amount of local state in an embedded **DuckDB**
+database at `ZULIPCHAT_DB_PATH` (default `.mcp/zulipchat/zulipchat.duckdb`,
+relative to the working directory). It holds exactly two kinds of data:
+
+- **Rebuildable caches** — `users_cache`, `streams_cache`. Re-fetched from Zulip
+  if lost, so losing them is harmless.
+- **Agent control plane + message-listener state** — agent sessions, instances,
+  profiles, requests/events, pending user-input requests, the task queue, and
+  the listener position.
+
+It does **not** hold: scheduled messages (those use Zulip's native
+`scheduled_messages` API, stored on Zulip), user Zulip API keys (OpenBao/Vault),
+OAuth client/token state (FastMCP's own file store — see the deployment notes in
+[Hosted Mode & Authentication](hosted-authentication.md)), or configuration.
+
+**In a container the DB sits on the ephemeral writable layer**, so recreating
+the container wipes it. With `--disable-agents` that only drops the caches
+(harmless — they rebuild). If you run the agent control plane or message
+listener, mount a volume and point `ZULIPCHAT_DB_PATH` at it, writable by the
+container user (uid `65532`):
+
+```yaml
+environment:
+  ZULIPCHAT_DB_PATH: /data/zulipchat/zulipchat.duckdb
+volumes:
+  - zulipchat-db:/data/zulipchat   # must be writable by uid 65532
+```
+
+DuckDB is single-writer (one process holds a write lock on the file), so do
+**not** point multiple replicas at the same mounted DB file.
 
 ## Transport modes
 
