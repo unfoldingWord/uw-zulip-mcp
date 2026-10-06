@@ -305,6 +305,29 @@ rejection.
   cool-off counters to a shared store so the limit holds across replicas.
 - Set `ZULIPCHAT_ENROLL_SECRET` explicitly so enrollment links are valid across
   restarts and replicas.
+- **Persist the OAuth proxy state across container restarts.** FastMCP's OAuth
+  provider keeps its dynamic client registrations and token/refresh state in an
+  encrypted file store under its data directory (`~/.local/share/fastmcp/oauth-proxy/`
+  by default). In a container that path is on the ephemeral writable layer, so
+  **recreating the container** (`docker run --rm`, a redeploy, a new image) wipes
+  it and **forces every client to re-register and re-authenticate**. To avoid
+  that, point FastMCP's home at a mounted volume and make it writable by the
+  container user (uid `65532`):
+
+  ```yaml
+  environment:
+    FASTMCP_HOME: /data/fastmcp
+  volumes:
+    - fastmcp-oauth:/data/fastmcp   # must be writable by uid 65532
+  ```
+
+  The signing key and the store's directory are derived from the Google client
+  secret, so they are stable across restarts as long as that secret is unchanged;
+  rotating it causes a one-time re-registration. Note this file store is
+  **per container** — multiple replicas do not share it, so a multi-replica
+  deployment needs a shared `client_storage` (e.g. Redis) wired into the auth
+  provider, not just a volume. (This is unrelated to the DuckDB database, which
+  holds app state only.)
 
 ## What this deliberately does not do
 
