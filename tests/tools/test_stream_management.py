@@ -44,20 +44,22 @@ class TestGetStreams:
 
     @pytest.mark.asyncio
     async def test_get_streams_filter_public(self, mock_deps):
-        """Test filtering out public streams."""
+        """include_public=False is delegated to the Zulip API, not post-filtered.
+
+        The old client-side `invite_only` filter wrongly dropped subscribed
+        public streams; the tool now passes include_public through to the API.
+        """
         mock_deps.get_streams.return_value = {
             "result": "success",
-            "streams": [
-                {"name": "general", "stream_id": 1, "invite_only": False},
-                {"name": "private", "stream_id": 2, "invite_only": True},
-            ],
+            "streams": [{"name": "private", "stream_id": 2, "invite_only": True}],
         }
 
         result = await get_streams(include_public=False)
 
         assert result["status"] == "success"
-        assert result["count"] == 1
-        assert result["streams"][0]["name"] == "private"
+        mock_deps.get_streams.assert_called_once_with(
+            include_subscribed=True, include_public=False
+        )
 
     @pytest.mark.asyncio
     async def test_get_streams_not_subscribed(self, mock_deps):

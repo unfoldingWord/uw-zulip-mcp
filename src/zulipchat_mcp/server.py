@@ -35,6 +35,7 @@ except ImportError:
     service_manager_available = False
 
 from .tools import register_core_tools, register_extended_tools
+from .tools.registration import normalize_tool_schemas
 
 try:
     from .utils.database import init_database
@@ -362,6 +363,9 @@ def main() -> None:
         logger.info("Registered extended tool set")
     else:
         logger.info("Registered core tool set")
+
+    # Make all-optional tool schemas declare `required: []` explicitly.
+    normalize_tool_schemas(mcp)
 
     # Warm user/stream caches for fast fuzzy resolution. Skipped in hosted
     # mode: there is no server-side user identity to warm caches for.

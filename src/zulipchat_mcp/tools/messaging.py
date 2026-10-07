@@ -5,9 +5,10 @@ Reactions moved to emoji_messaging.py, bulk ops moved to mark_messaging.py.
 """
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from fastmcp import FastMCP
+from pydantic import Field
 
 from ..config import get_client
 
@@ -125,7 +126,16 @@ async def edit_message(
         return {"status": "error", "error": result.get("msg", "Failed to edit message")}
 
 
-async def get_message(message_id: int) -> dict[str, Any]:
+async def get_message(
+    message_id: Annotated[
+        int,
+        Field(
+            description=(
+                "Numeric ID of the message to fetch (positive integer). e.g. 123456."
+            )
+        ),
+    ],
+) -> dict[str, Any]:
     """Get a single message by ID."""
     if not isinstance(message_id, int) or message_id <= 0:
         return {"status": "error", "error": "Invalid message ID"}

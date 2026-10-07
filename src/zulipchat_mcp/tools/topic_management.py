@@ -6,15 +6,31 @@ Identity-protected topic operations:
 - Destructive operations (delete) require --unsafe mode
 """
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from fastmcp import FastMCP
+from pydantic import Field
 
 from ..config import get_bot_client, get_client, get_config_manager
 from ..core.security import is_unsafe_mode
 
 
-async def get_stream_topics(stream_id: int, max_results: int = 100) -> dict[str, Any]:
+async def get_stream_topics(
+    stream_id: Annotated[
+        int,
+        Field(description="Numeric stream ID whose topics to list. e.g. 42."),
+    ],
+    max_results: Annotated[
+        int,
+        Field(
+            description=(
+                "Maximum number of topics to return (the list is truncated to "
+                "this length). Note: the returned `count` is the total number of "
+                "topics found, which may exceed the number returned. e.g. 100."
+            )
+        ),
+    ] = 100,
+) -> dict[str, Any]:
     """Get recent topics for a stream (READ-ONLY)."""
     client = get_client()
 

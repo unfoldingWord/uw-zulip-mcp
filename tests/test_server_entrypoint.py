@@ -1,7 +1,7 @@
 """Tests for server entrypoint CLI behavior."""
 
 import sys
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -54,6 +54,8 @@ def test_server_disables_global_fastmcp_tasks():
     cfg.validate_config.return_value = True
     logger = MagicMock()
     mcp = MagicMock()
+    # main() normalizes tool schemas via `await mcp.list_tools()`.
+    mcp.list_tools = AsyncMock(return_value=[])
 
     with (
         patch("src.zulipchat_mcp.server.setup_structured_logging"),

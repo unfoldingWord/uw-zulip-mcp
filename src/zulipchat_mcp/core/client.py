@@ -491,18 +491,34 @@ class ZulipClientWrapper:
 
         return response
 
-    def get_users(self) -> dict[str, Any]:
-        """Get list of users."""
-        # Check cache first
-        cached_users = user_cache.get_users()
-        if cached_users is not None:
-            return {"result": "success", "members": cached_users}
+    def get_users(
+        self,
+        *,
+        client_gravatar: bool = True,
+        include_custom_profile_fields: bool = False,
+    ) -> dict[str, Any]:
+        """Get list of users.
 
-        # Fetch from API
-        response = self.client.get_users()
-        if response["result"] == "success":
-            user_cache.set_users(response["members"])
-        return response
+        The default projection (gravatar on, no custom profile fields) is cached
+        and shared for name resolution. A non-default projection is fetched fresh
+        and is not cached, so it never pollutes the shared user cache.
+        """
+        use_defaults = client_gravatar and not include_custom_profile_fields
+        if use_defaults:
+            cached_users = user_cache.get_users()
+            if cached_users is not None:
+                return {"result": "success", "members": cached_users}
+            response = self.client.get_users()
+            if response.get("result") == "success":
+                user_cache.set_users(response["members"])
+            return response
+
+        return self.client.get_members(
+            request={
+                "client_gravatar": client_gravatar,
+                "include_custom_profile_fields": include_custom_profile_fields,
+            }
+        )
 
     def get_stream_topics(self, stream_id: int) -> dict[str, Any]:
         """Get recent topics for a stream."""

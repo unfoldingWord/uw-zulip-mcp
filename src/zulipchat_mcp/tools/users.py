@@ -5,9 +5,10 @@ No user creation/editing - just reading, searching, and matching users.
 """
 
 import re
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from fastmcp import FastMCP
+from pydantic import Field
 
 from ..config import get_client
 from ..core.cache import user_cache
@@ -20,15 +21,42 @@ def validate_email(email: str) -> bool:
 
 
 async def get_users(
-    client_gravatar: bool = True,
-    include_custom_profile_fields: bool = False,
-    user_ids: list[int] | None = None,
+    client_gravatar: Annotated[
+        bool,
+        Field(
+            description=(
+                "If true, include each user's Gravatar URL in `avatar_url` when "
+                "they have no custom avatar. e.g. true."
+            )
+        ),
+    ] = True,
+    include_custom_profile_fields: Annotated[
+        bool,
+        Field(
+            description=(
+                "If true, include each user's custom profile fields in the "
+                "response. e.g. false."
+            )
+        ),
+    ] = False,
+    user_ids: Annotated[
+        list[int] | None,
+        Field(
+            description=(
+                "Restrict the result to these numeric user IDs (filtered "
+                "client-side). Omit for all users. e.g. [11, 42]."
+            )
+        ),
+    ] = None,
 ) -> dict[str, Any]:
     """Get all users in organization (READ-ONLY)."""
     client = get_client()
 
     try:
-        result = client.get_users()
+        result = client.get_users(
+            client_gravatar=client_gravatar,
+            include_custom_profile_fields=include_custom_profile_fields,
+        )
 
         if result.get("result") == "success":
             users = result.get("members", [])
@@ -405,7 +433,17 @@ async def unmute_user(muted_user_id: int) -> dict[str, Any]:
         return {"status": "error", "error": str(e)}
 
 
-async def resolve_user(name: str) -> dict[str, Any]:
+async def resolve_user(
+    name: Annotated[
+        str,
+        Field(
+            description=(
+                "A display name (or partial name) to resolve to a Zulip account "
+                "by fuzzy match. e.g. 'Jaime' or 'ana b'."
+            )
+        ),
+    ],
+) -> dict[str, Any]:
     """Resolve a display name to Zulip email. Fuzzy: 'Jaime' -> jaime@org.zulipchat.com"""
     # Warm cache if empty
     if user_cache.get_users() is None:
