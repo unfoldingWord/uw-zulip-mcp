@@ -20,7 +20,7 @@ from ..utils.env import env_bool
 
 logger = logging.getLogger(__name__)
 
-# Matches JD prefixes: "30 Infrastructure", "42.01 Hebrew Grammar", "00.16 Prayer Requests"
+# Matches JD prefixes: "30 Platform Operations", "42.01 Newsletter Drafts", "00.16 Personal Updates"
 JD_PREFIX_PATTERN = re.compile(r"^(\d{2})(?:\.(\d{2}))?\s")
 
 # Counter for blocked-by-policy events (for observability)
@@ -107,11 +107,11 @@ def parse_jd_prefix(channel_name: str) -> tuple[int, int | None] | None:
         (area, category) tuple, or (area, None) if no category, or None if no JD prefix.
 
     Examples:
-        "30 Infrastructure" -> (30, None)
-        "42.01 Hebrew Grammar" -> (42, 1)
-        "00.16 Prayer Requests" -> (0, 16)
+        "30 Platform Operations" -> (30, None)
+        "42.01 Newsletter Drafts" -> (42, 1)
+        "00.16 Personal Updates" -> (0, 16)
         "general" -> None
-        "Helpdesk - ST" -> None
+        "Support Desk - EU" -> None
     """
     match = JD_PREFIX_PATTERN.match(channel_name)
     if not match:

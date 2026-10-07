@@ -11,10 +11,10 @@ Assessment of the 18 security risks identified in the upstream zulipchat-mcp cod
 | 3 | Arbitrary local file read via upload | Critical | **Fixed** | `--read-only` removes the `upload_file` tool entirely. Not registered, not invocable. |
 | 4 | Arbitrary local file write via download | Critical | **Fixed** | `--read-only` removes the `manage_files` tool entirely. |
 | 5 | SSRF via webhook callback URL | Critical | **Fixed** | `--disable-agents` removes all event listener tools. `--read-only` also removes them. No callback URLs are processed. |
-| 6 | Chat data sent to external LLMs | High | **Mitigated** | Channel filter limits *which* data reaches the LLM. Sensitive channels (Prayer, Family, Encouragement, General, Random) are excluded. DMs and private channels are excluded. This is the inherent purpose of MCP — to connect data to LLMs — but scope is controlled. |
+| 6 | Chat data sent to external LLMs | High | **Mitigated** | Channel filter limits *which* data reaches the LLM. Sensitive channels are excluded. DMs and private channels are excluded. This is the inherent purpose of MCP — to connect data to LLMs — but scope is controlled. |
 | 7 | Unencrypted local DB stores messages | High | **Mitigated** | `--disable-agents` skips database initialization entirely. No DuckDB file is created, no messages are persisted locally. |
 | 8 | Identity spoofing via dual credentials | High | **Fixed** | `--read-only` removes `switch_identity` tool. Cannot switch to bot identity or post as someone else. |
-| 9 | .env auto-load from CWD | High | **Acknowledged** | Upstream behavior — `config.py` loads `.env` from the current working directory. Our `run-uw.sh` launcher explicitly sources `.env` from the script directory, reducing risk. However, if the server is started manually from an untrusted directory, a malicious `.env` could override configuration. |
+| 9 | .env auto-load from CWD | High | **Acknowledged** | Upstream behavior — `config.py` loads `.env` from the current working directory. Our `run-uw.sh` launcher (in the private [unfoldingWord/zulipchat-mcp-scripts](https://github.com/unfoldingWord/zulipchat-mcp-scripts) repository) explicitly sources `.env` from the script directory, reducing risk. However, if the server is started manually from an untrusted directory, a malicious `.env` could override configuration. |
 | 10 | Rate limiter unused / ineffective | High | **Open** | Upstream issue — duplicate rate limiter implementations exist in `error_handling.py` and `security.py`. Not fixed in our fork. Mitigated by read-only mode reducing the write-path attack surface. |
 | 11 | Sanitization gaps across tools | Medium | **Mitigated** | Read-only mode eliminates most write-path sanitization concerns (no sending, editing, or uploading). Channel filter adds an additional validation layer on all read paths. |
 | 12 | Prompt injection via message content | Medium | **Acknowledged** | Inherent to LLM+MCP architecture — a Zulip message could contain text that manipulates the LLM's behavior. Our channel filter limits which messages are visible, reducing the exposure surface. Not fully solvable at the MCP layer; requires LLM-side defenses. |
@@ -40,7 +40,7 @@ Assessment of the 18 security risks identified in the upstream zulipchat-mcp cod
 ## Acknowledged Risks — Detail
 
 ### #9 — .env auto-load from CWD
-The upstream `config.py` loads `.env` from the current working directory at import time. A malicious `.env` file in the CWD could override channel filter settings (e.g., disabling the filter entirely). Our `run-uw.sh` launcher mitigates this by explicitly sourcing `.env` from the known script directory and using `exec` to start the server from that directory.
+The upstream `config.py` loads `.env` from the current working directory at import time. A malicious `.env` file in the CWD could override channel filter settings (e.g., disabling the filter entirely). Our `run-uw.sh` launcher (in the private [unfoldingWord/zulipchat-mcp-scripts](https://github.com/unfoldingWord/zulipchat-mcp-scripts) repository) mitigates this by explicitly sourcing `.env` from the known script directory and using `exec` to start the server from that directory.
 
 **Residual risk:** If someone runs `zulipchat-mcp` directly from an untrusted directory.
 

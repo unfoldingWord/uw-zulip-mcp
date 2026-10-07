@@ -4,13 +4,15 @@ unfoldingWord's fork of [zulipchat-mcp](https://github.com/akougkas/zulipchat-mc
 
 ## What This Is
 
-An MCP server that connects AI assistants (Claude Code, Gemini CLI, Cursor, etc.) to unfoldingWord's Zulip workspace — with deterministic access controls so sensitive channels (Prayer Requests, Family, etc.) are never sent to LLM providers.
+An MCP server that connects AI assistants (Claude Code, Gemini CLI, Cursor, etc.) to unfoldingWord's Zulip workspace — with deterministic access controls so sensitive channels (personal updates, social chat, etc.) are never sent to LLM providers.
 
 **Built on** [zulipchat-mcp v0.7.1](https://github.com/akougkas/zulipchat-mcp) (MIT licensed).
 
 ## Quick Start
 
 ### One-command setup (recommended)
+
+The org setup scripts live in the private [unfoldingWord/zulipchat-mcp-scripts](https://github.com/unfoldingWord/zulipchat-mcp-scripts) repository (unfoldingWord staff only).
 
 ```bash
 ./setup-uw-cowork.sh
@@ -21,16 +23,16 @@ This checks prerequisites, creates the `.env` with channel filter config, instal
 ### Manual start
 
 ```bash
-# Load config and run
+# Load config and run (script from unfoldingWord/zulipchat-mcp-scripts)
 ./run-uw.sh
 ```
 
-Or with explicit env vars:
+Or with explicit env vars (EXCLUDED_CHANNELS are examples):
 
 ```bash
 export ZULIPCHAT_CHANNEL_FILTER_ENABLED=true
 export ZULIPCHAT_JD_ALLOW_AREAS=01,02,14,30-99
-export ZULIPCHAT_CHANNEL_EXCLUDE="00.16 Prayer Requests,00.18 General,00.19 Family,00.20 Random,00.21 Encouragement"
+export ZULIPCHAT_CHANNEL_EXCLUDE="00.16 Personal Updates,00.18 Coffee Break,00.19 Pets & Hobbies,00.20 Off Topic,00.21 Kudos"
 export ZULIPCHAT_EXCLUDE_DMS=true
 export ZULIPCHAT_EXCLUDE_PRIVATE=true
 export ZULIPCHAT_READ_ONLY=true
@@ -49,8 +51,8 @@ Deterministic access control using unfoldingWord's JD naming convention. Channel
 ZULIPCHAT_CHANNEL_FILTER_ENABLED=true       # Master switch
 ZULIPCHAT_JD_ALLOW_AREAS=01,02,14,30-99     # JD area ranges to allow
 ZULIPCHAT_JD_DENY_AREAS=                     # JD area ranges to deny (overrides allow)
-ZULIPCHAT_CHANNEL_INCLUDE=00.17 All unfoldingWord  # Always include (overrides area rules)
-ZULIPCHAT_CHANNEL_EXCLUDE=00.16 Prayer Requests    # Always exclude (highest priority)
+ZULIPCHAT_CHANNEL_INCLUDE=00.17 All Staff         # Always include (overrides area rules)
+ZULIPCHAT_CHANNEL_EXCLUDE=00.16 Personal Updates  # Always exclude (highest priority)
 ZULIPCHAT_EXCLUDE_NON_JD=true                # Channels without JD prefix excluded
 ZULIPCHAT_EXCLUDE_DMS=true                   # Direct messages excluded
 ZULIPCHAT_EXCLUDE_PRIVATE=true               # Private channels excluded
@@ -95,8 +97,8 @@ Each event is serialized as JSON via `json.dumps` (injection-safe):
 
 ```json
 {"event": "tool_invocation", "tool": "search_messages", "query": "deployment status", "identity": "user", "timestamp_unix": 1710886200.123}
-{"event": "channel_access", "channel": "30 Infrastructure", "access_type": "read", "identity": "user", "timestamp_unix": 1710886201.456}
-{"event": "tool_invocation", "tool": "send_message", "stream": "00.16 Prayer Requests", "blocked": true, "reason": "channel_filter", "timestamp_unix": 1710886202.789}
+{"event": "channel_access", "channel": "30 Platform Operations", "access_type": "read", "identity": "user", "timestamp_unix": 1710886201.456}
+{"event": "tool_invocation", "tool": "send_message", "stream": "00.16 Personal Updates", "blocked": true, "reason": "channel_filter", "timestamp_unix": 1710886202.789}
 ```
 
 ### Startup Privacy Notice
@@ -246,6 +248,8 @@ uv run mypy src                                       # Type checking
 ```
 
 ### Scripts
+
+These scripts live in the private [unfoldingWord/zulipchat-mcp-scripts](https://github.com/unfoldingWord/zulipchat-mcp-scripts) repository (unfoldingWord staff only).
 
 | Script | Description |
 |--------|-------------|

@@ -57,7 +57,7 @@ The channel filter (`core/channel_filter.py`) is the primary privacy control:
 │                                             │
 │  Config:                                    │
 │    jd_allow_areas = [(30,99), (1,2), ...]  │
-│    channel_exclude = {"00.16 Prayer..."}   │
+│    channel_exclude = {"00.16 Personal..."}  │
 │    exclude_private = True                   │
 │    exclude_dms = True                       │
 │                                             │
