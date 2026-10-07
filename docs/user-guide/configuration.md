@@ -314,5 +314,4 @@ Run the server and call `server_info` from your MCP client.
 - [Installation](installation.md)
 - [Setup Wizard](setup-wizard.md)
 - [Architecture](../developer-guide/architecture.md)
-- [Team Overview](../uw-zulip-mcp-overview.md)
 - [Security Policy](../../SECURITY.md)

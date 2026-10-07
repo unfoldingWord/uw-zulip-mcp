@@ -4,7 +4,6 @@ uw-zulip-mcp — unfoldingWord fork of ZulipChat MCP v0.7.1 with privacy control
 
 ## Start Here
 
-- [Team Overview](uw-zulip-mcp-overview.md) — what we built, why, and how to use it
 - [Quick Start](user-guide/quick-start.md)
 - [Installation](user-guide/installation.md)
 - [Configuration](user-guide/configuration.md) — all CLI flags and environment variables

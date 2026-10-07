@@ -235,7 +235,7 @@ class TestChannelFilterPrivateStreams:
                 jd_allow_areas=[(0, 99)],
             )
         )
-        stream = {"name": "09.40 - 2026 All Staff", "invite_only": True}
+        stream = {"name": "09.40 - Private Team", "invite_only": True}
         assert cf.is_stream_allowed(stream) is False
 
     def test_allow_private_when_configured(self):
@@ -246,7 +246,7 @@ class TestChannelFilterPrivateStreams:
                 jd_allow_areas=[(0, 99)],
             )
         )
-        stream = {"name": "09.40 - 2026 All Staff", "invite_only": True}
+        stream = {"name": "09.40 - Private Team", "invite_only": True}
         assert cf.is_stream_allowed(stream) is True
 
     def test_public_stream_not_affected(self):
@@ -398,7 +398,7 @@ class TestRealisticConfig:
         assert uw_filter.is_channel_allowed("Catalyst Luncheon") is False
 
     def test_private_channels_excluded(self, uw_filter):
-        stream = {"name": "09.40 - 2026 All Staff", "invite_only": True}
+        stream = {"name": "09.40 - Private Team", "invite_only": True}
         assert uw_filter.is_stream_allowed(stream) is False
 
     def test_area_00_without_explicit_include_blocked(self, uw_filter):
@@ -427,7 +427,7 @@ class TestStreamIdEnforcement:
             [
                 {"stream_id": 1, "name": "30 Infrastructure", "invite_only": False},
                 {"stream_id": 2, "name": "00.16 Prayer Requests", "invite_only": False},
-                {"stream_id": 3, "name": "09.40 - 2026 All Staff", "invite_only": True},
+                {"stream_id": 3, "name": "09.40 - Private Team", "invite_only": True},
                 {"stream_id": 4, "name": "84 BT Servant", "invite_only": False},
                 {"stream_id": 5, "name": "Helpdesk - ST", "invite_only": False},
             ]
@@ -497,14 +497,14 @@ class TestPrivacyAwareNameCheck:
             [
                 {
                     "stream_id": 10,
-                    "name": "09.40 - 2026 All Staff",
+                    "name": "09.40 - Private Team",
                     "invite_only": True,
                 },
                 {"stream_id": 11, "name": "30 Infrastructure", "invite_only": False},
             ]
         )
         # Name passes JD filter but is private — should be blocked
-        assert cf.is_channel_allowed_with_privacy("09.40 - 2026 All Staff") is False
+        assert cf.is_channel_allowed_with_privacy("09.40 - Private Team") is False
         assert cf.is_channel_allowed_with_privacy("30 Infrastructure") is True
 
     def test_falls_back_when_not_in_index(self):

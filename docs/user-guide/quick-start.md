@@ -67,6 +67,5 @@ The server starts as user identity. Use `switch_identity` to move between `user`
 ## Next
 
 - [Configuration](configuration.md) — all CLI flags and environment variables
-- [Team Overview](../uw-zulip-mcp-overview.md) — what this fork adds and why
 - [Installation](installation.md)
 - [Integration docs](../integrations/README.md)
