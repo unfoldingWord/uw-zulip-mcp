@@ -10,24 +10,15 @@ An MCP server that connects AI assistants (Claude Code, Gemini CLI, Cursor, etc.
 
 ## Quick Start
 
-### One-command setup (recommended)
-
-The org setup scripts live in the private [unfoldingWord/zulipchat-mcp-scripts](https://github.com/unfoldingWord/zulipchat-mcp-scripts) repository (unfoldingWord staff only).
-
-```bash
-./setup-uw-cowork.sh
-```
-
-This checks prerequisites, creates the `.env` with channel filter config, installs dependencies, runs tests, and registers the MCP server with Claude Code — all in one step.
-
 ### Manual start
 
+With your Zulip credentials in `~/.zuliprc` (or `ZULIP_*` env vars), run:
+
 ```bash
-# Load config and run (script from unfoldingWord/zulipchat-mcp-scripts)
-./run-uw.sh
+zulipchat-mcp --read-only --disable-agents --zulip-config-file ~/.zuliprc
 ```
 
-Or with explicit env vars (EXCLUDED_CHANNELS are examples):
+To apply unfoldingWord's channel filter, export the settings first (the excluded channels below are examples):
 
 ```bash
 export ZULIPCHAT_CHANNEL_FILTER_ENABLED=true
@@ -39,6 +30,15 @@ export ZULIPCHAT_READ_ONLY=true
 export ZULIPCHAT_DISABLE_AGENTS=true
 
 zulipchat-mcp --read-only --disable-agents --zulip-config-file ~/.zuliprc
+```
+
+### One-command setup (unfoldingWord staff)
+
+unfoldingWord staff can use the helper scripts in the private [unfoldingWord/zulipchat-mcp-scripts](https://github.com/unfoldingWord/zulipchat-mcp-scripts) repository (staff only). From a checkout of that repo:
+
+```bash
+./setup-uw-cowork.sh    # checks prereqs, creates .env, installs deps, runs tests, registers the MCP server
+./run-uw.sh             # loads .env and starts the server with org defaults
 ```
 
 ## What We Changed (Fork Delta)
