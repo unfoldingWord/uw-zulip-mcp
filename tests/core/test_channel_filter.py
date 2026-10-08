@@ -425,9 +425,21 @@ class TestStreamIdEnforcement:
         # Populate index as if get_streams returned these
         cf.update_stream_index(
             [
-                {"stream_id": 1, "name": "30 Platform Operations", "invite_only": False},
-                {"stream_id": 2, "name": "00.16 Personal Updates", "invite_only": False},
-                {"stream_id": 3, "name": "09.40 - Leadership Team", "invite_only": True},
+                {
+                    "stream_id": 1,
+                    "name": "30 Platform Operations",
+                    "invite_only": False,
+                },
+                {
+                    "stream_id": 2,
+                    "name": "00.16 Personal Updates",
+                    "invite_only": False,
+                },
+                {
+                    "stream_id": 3,
+                    "name": "09.40 - Leadership Team",
+                    "invite_only": True,
+                },
                 {"stream_id": 4, "name": "84 Mobile App", "invite_only": False},
                 {"stream_id": 5, "name": "Support Desk - EU", "invite_only": False},
             ]
@@ -435,7 +447,9 @@ class TestStreamIdEnforcement:
         return cf
 
     def test_allowed_stream_by_id(self, filter_with_index):
-        assert filter_with_index.is_stream_id_allowed(1) is True  # 30 Platform Operations
+        assert (
+            filter_with_index.is_stream_id_allowed(1) is True
+        )  # 30 Platform Operations
         assert filter_with_index.is_stream_id_allowed(4) is True  # 84 Mobile App
 
     def test_blocked_stream_by_id_name_filter(self, filter_with_index):
@@ -463,7 +477,11 @@ class TestStreamIdEnforcement:
         )
         cf.update_stream_index(
             [
-                {"stream_id": 1, "name": "30 Platform Operations", "invite_only": False},
+                {
+                    "stream_id": 1,
+                    "name": "30 Platform Operations",
+                    "invite_only": False,
+                },
             ]
         )
         assert cf.is_stream_id_allowed(1) is True
@@ -473,7 +491,11 @@ class TestStreamIdEnforcement:
         # Updating index again should not break anything
         filter_with_index.update_stream_index(
             [
-                {"stream_id": 1, "name": "30 Platform Operations", "invite_only": False},
+                {
+                    "stream_id": 1,
+                    "name": "30 Platform Operations",
+                    "invite_only": False,
+                },
             ]
         )
         assert filter_with_index.is_stream_id_allowed(1) is True
@@ -500,7 +522,11 @@ class TestPrivacyAwareNameCheck:
                     "name": "09.40 - Leadership Team",
                     "invite_only": True,
                 },
-                {"stream_id": 11, "name": "30 Platform Operations", "invite_only": False},
+                {
+                    "stream_id": 11,
+                    "name": "30 Platform Operations",
+                    "invite_only": False,
+                },
             ]
         )
         # Name passes JD filter but is private — should be blocked

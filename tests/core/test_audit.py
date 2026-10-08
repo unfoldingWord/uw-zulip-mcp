@@ -83,7 +83,9 @@ class TestAuditLogging:
                     identity="user",
                     message_count=42,
                 )
-            records = [r for r in caplog.records if "30 Platform Operations" in r.message]
+            records = [
+                r for r in caplog.records if "30 Platform Operations" in r.message
+            ]
             assert len(records) == 1
             event = json.loads(records[0].message)
             assert event["channel"] == "30 Platform Operations"
