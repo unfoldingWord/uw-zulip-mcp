@@ -1,6 +1,16 @@
 # Roadmap
 
-## v0.8.0 (Current)
+## v0.9.0 (Current)
+
+Released 2026-10-08 — Docker image `unfoldingword/zulipchat-mcp`
+
+**Highlights:**
+- Identity allowlist for hosted mode (fail-closed): `ZULIPCHAT_ALLOWED_EMAIL_DOMAINS` / `ZULIPCHAT_ALLOWED_EMAILS`. **Hosted deployments must now set an allowlist.**
+- Enrollment hardening: single-use links, link expiry shown on the page, and automatic re-enrollment when Zulip rejects a rotated key
+- Unified JSON logging — app and Uvicorn logs now share one structured format
+- MCP tool usability: verified per-parameter descriptions and return shapes, explicit `required` arrays, and fixes to `get_users` and `get_streams` parameters
+
+## v0.8.0
 
 Released 2026-10-02 — Docker image `unfoldingword/zulipchat-mcp`
 
