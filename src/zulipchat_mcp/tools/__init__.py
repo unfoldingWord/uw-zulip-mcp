@@ -60,40 +60,84 @@ def register_core_tools(
     # Search & Discovery (4)
     mcp.tool(
         name="search_messages",
-        description="Search messages with filters for stream, topic, sender, time.",
+        description=(
+            "Search messages with filters for stream, topic, sender, time, and "
+            "content, with fuzzy sender resolution. Returns "
+            "{status, messages[], found, anchor, narrow_applied, sort_by}; each "
+            "message has id, sender, email, timestamp, content, type, stream, "
+            "topic, reactions, flags."
+        ),
     )(search_messages)
-    mcp.tool(name="get_streams", description="List available streams/channels.")(
-        get_streams
-    )
-    mcp.tool(name="get_stream_info", description="Get detailed stream information.")(
-        get_stream_info
-    )
-    mcp.tool(name="get_stream_topics", description="List recent topics in a stream.")(
-        get_stream_topics
-    )
+    mcp.tool(
+        name="get_streams",
+        description=(
+            "List available streams/channels. Returns "
+            "{status, streams[], count}, where each stream is a Zulip stream "
+            "object (stream_id, name, description, invite_only, ...)."
+        ),
+    )(get_streams)
+    mcp.tool(
+        name="get_stream_info",
+        description=(
+            "Get detailed information about one stream. Returns "
+            "{status, stream_id, name, description, invite_only, is_web_public}, "
+            "plus subscribers[]+subscriber_count and/or topics[]+topic_count when "
+            "requested."
+        ),
+    )(get_stream_info)
+    mcp.tool(
+        name="get_stream_topics",
+        description=(
+            "List recent topics in a stream. Returns "
+            "{status, stream_id, topics[], count}, where count is the total "
+            "topics found (may exceed the truncated topics[])."
+        ),
+    )(get_stream_topics)
 
     # Users (3)
     mcp.tool(
         name="resolve_user",
-        description="Resolve display name to email with fuzzy matching.",
+        description=(
+            "Resolve a display name to a Zulip account with fuzzy matching. "
+            "Returns {status: 'success', email, matched, confidence} on a hit, "
+            "or {status: 'not_found', query, suggestion}."
+        ),
     )(resolve_user)
-    mcp.tool(name="get_users", description="List all users in the organization.")(
-        get_users
-    )
+    mcp.tool(
+        name="get_users",
+        description=(
+            "List users in the organization. Returns "
+            "{status, users[], count, client_gravatar, "
+            "include_custom_profile_fields}; each user is a Zulip user object."
+        ),
+    )(get_users)
     mcp.tool(
         name="get_own_user",
-        description="Get current authenticated user's profile.",
+        description=(
+            "Get the current authenticated user's profile. Returns "
+            "{status, user:{user_id, email, full_name, avatar_url, is_admin, "
+            "is_owner, is_bot, role, delivery_email, profile_data}}."
+        ),
     )(get_own_user)
 
     # Read-only message retrieval (1)
-    mcp.tool(name="get_message", description="Retrieve a single message by ID.")(
-        get_message
-    )
+    mcp.tool(
+        name="get_message",
+        description=(
+            "Retrieve a single message by ID. Returns "
+            "{status, message:{...full Zulip message object...}}."
+        ),
+    )(get_message)
 
     # System (1 — server_info is always safe)
-    mcp.tool(name="server_info", description="Get server version and capabilities.")(
-        server_info
-    )
+    mcp.tool(
+        name="server_info",
+        description=(
+            "Get server version and capabilities. Returns "
+            "{status, server_name, version, available_identities:{user, bot}, "
+            "features[], zulip_site}."
+        ),
+    )(server_info)
 
     # --- Write tools (skipped in read-only mode) ---
     if not read_only:

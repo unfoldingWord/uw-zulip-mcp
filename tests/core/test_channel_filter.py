@@ -16,23 +16,23 @@ from zulipchat_mcp.core.channel_filter import (
 
 class TestParseJdPrefix:
     def test_area_only(self):
-        assert parse_jd_prefix("30 Infrastructure") == (30, None)
+        assert parse_jd_prefix("30 Platform Operations") == (30, None)
 
     def test_area_and_category(self):
-        assert parse_jd_prefix("42.01 Hebrew Grammar") == (42, 1)
+        assert parse_jd_prefix("42.01 Newsletter Drafts") == (42, 1)
 
     def test_zero_prefixed(self):
-        assert parse_jd_prefix("00.16 Prayer Requests") == (0, 16)
+        assert parse_jd_prefix("00.16 Personal Updates") == (0, 16)
 
     def test_no_prefix(self):
         assert parse_jd_prefix("general") is None
 
     def test_no_prefix_with_dash(self):
-        assert parse_jd_prefix("Helpdesk - ST") is None
+        assert parse_jd_prefix("Support Desk - EU") is None
 
     def test_no_space_after_number(self):
-        # "30Infrastructure" should not match — requires space after prefix
-        assert parse_jd_prefix("30Infrastructure") is None
+        # "30PlatformOperations" should not match — requires space after prefix
+        assert parse_jd_prefix("30PlatformOperations") is None
 
     def test_three_digit_area(self):
         # JD areas are two digits only
@@ -42,14 +42,14 @@ class TestParseJdPrefix:
         assert parse_jd_prefix("3 Something") is None
 
     def test_area_with_hyphen_id(self):
-        # "14.17 - 2024 LNT Lease Payments" — JD ID followed by number with hyphen
-        result = parse_jd_prefix("14.17 - 2024 LNT Lease Payments")
+        # "14.17 - 2024 Warehouse Lease" — JD ID followed by number with hyphen
+        result = parse_jd_prefix("14.17 - 2024 Warehouse Lease")
         assert result == (14, 17)
 
     def test_area_folder_format(self):
-        # "80-89 Tech & SLR" — this is a Zulip folder, not a channel
+        # "80-89 Engineering & Data" — this is a Zulip folder, not a channel
         # It has a dash in the number, so it shouldn't match JD prefix
-        assert parse_jd_prefix("80-89 Tech & SLR") is None
+        assert parse_jd_prefix("80-89 Engineering & Data") is None
 
 
 # --- parse_area_ranges tests ---
@@ -89,9 +89,9 @@ class TestParseChannelList:
         assert result == {"general", "random"}
 
     def test_with_spaces(self):
-        result = parse_channel_list(" 00.17 All unfoldingWord , Helpdesk - ST ")
-        assert "00.17 All unfoldingWord" in result
-        assert "Helpdesk - ST" in result
+        result = parse_channel_list(" 00.17 All Staff , Support Desk - EU ")
+        assert "00.17 All Staff" in result
+        assert "Support Desk - EU" in result
 
     def test_empty(self):
         assert parse_channel_list("") == set()
@@ -107,11 +107,11 @@ class TestChannelFilterDisabled:
     def test_all_channels_pass_when_disabled(self):
         cf = ChannelFilter(ChannelFilterConfig(enabled=False))
         assert cf.is_channel_allowed("anything") is True
-        assert cf.is_channel_allowed("00.16 Prayer Requests") is True
+        assert cf.is_channel_allowed("00.16 Personal Updates") is True
 
     def test_filter_streams_noop_when_disabled(self):
         cf = ChannelFilter(ChannelFilterConfig(enabled=False))
-        streams = [{"name": "anything"}, {"name": "00.16 Prayer Requests"}]
+        streams = [{"name": "anything"}, {"name": "00.16 Personal Updates"}]
         assert cf.filter_streams(streams) == streams
 
 
@@ -120,22 +120,22 @@ class TestChannelFilterExclude:
         cf = ChannelFilter(
             ChannelFilterConfig(
                 enabled=True,
-                channel_exclude={"00.16 Prayer Requests"},
+                channel_exclude={"00.16 Personal Updates"},
                 jd_allow_areas=[(0, 99)],
             )
         )
-        assert cf.is_channel_allowed("00.16 Prayer Requests") is False
+        assert cf.is_channel_allowed("00.16 Personal Updates") is False
 
     def test_exclude_overrides_include(self):
         cf = ChannelFilter(
             ChannelFilterConfig(
                 enabled=True,
-                channel_include={"00.16 Prayer Requests"},
-                channel_exclude={"00.16 Prayer Requests"},
+                channel_include={"00.16 Personal Updates"},
+                channel_exclude={"00.16 Personal Updates"},
             )
         )
         # Exclude takes absolute precedence
-        assert cf.is_channel_allowed("00.16 Prayer Requests") is False
+        assert cf.is_channel_allowed("00.16 Personal Updates") is False
 
 
 class TestChannelFilterInclude:
@@ -143,22 +143,22 @@ class TestChannelFilterInclude:
         cf = ChannelFilter(
             ChannelFilterConfig(
                 enabled=True,
-                channel_include={"Helpdesk - ST"},
+                channel_include={"Support Desk - EU"},
                 exclude_non_jd=True,
             )
         )
         # Non-JD channel, would normally be excluded, but explicitly included
-        assert cf.is_channel_allowed("Helpdesk - ST") is True
+        assert cf.is_channel_allowed("Support Desk - EU") is True
 
     def test_include_overrides_area_deny(self):
         cf = ChannelFilter(
             ChannelFilterConfig(
                 enabled=True,
-                channel_include={"00.17 All unfoldingWord"},
+                channel_include={"00.17 All Staff"},
                 jd_deny_areas=[(0, 9)],
             )
         )
-        assert cf.is_channel_allowed("00.17 All unfoldingWord") is True
+        assert cf.is_channel_allowed("00.17 All Staff") is True
 
 
 class TestChannelFilterJdAreas:
@@ -169,9 +169,9 @@ class TestChannelFilterJdAreas:
                 jd_allow_areas=[(30, 99)],
             )
         )
-        assert cf.is_channel_allowed("30 Infrastructure") is True
-        assert cf.is_channel_allowed("84 BT Servant") is True
-        assert cf.is_channel_allowed("01 Knowledge base") is False
+        assert cf.is_channel_allowed("30 Platform Operations") is True
+        assert cf.is_channel_allowed("84 Mobile App") is True
+        assert cf.is_channel_allowed("01 Company Wiki") is False
 
     def test_deny_areas(self):
         cf = ChannelFilter(
@@ -180,8 +180,8 @@ class TestChannelFilterJdAreas:
                 jd_deny_areas=[(0, 9)],
             )
         )
-        assert cf.is_channel_allowed("00.16 Prayer Requests") is False
-        assert cf.is_channel_allowed("30 Infrastructure") is True
+        assert cf.is_channel_allowed("00.16 Personal Updates") is False
+        assert cf.is_channel_allowed("30 Platform Operations") is True
 
     def test_deny_overrides_allow(self):
         cf = ChannelFilter(
@@ -191,8 +191,8 @@ class TestChannelFilterJdAreas:
                 jd_deny_areas=[(0, 9)],
             )
         )
-        assert cf.is_channel_allowed("00.16 Prayer Requests") is False
-        assert cf.is_channel_allowed("30 Infrastructure") is True
+        assert cf.is_channel_allowed("00.16 Personal Updates") is False
+        assert cf.is_channel_allowed("30 Platform Operations") is True
 
     def test_no_allow_areas_allows_all_jd(self):
         cf = ChannelFilter(
@@ -201,8 +201,8 @@ class TestChannelFilterJdAreas:
                 jd_allow_areas=[],
             )
         )
-        assert cf.is_channel_allowed("01 Knowledge base") is True
-        assert cf.is_channel_allowed("99 Archive") is True
+        assert cf.is_channel_allowed("01 Company Wiki") is True
+        assert cf.is_channel_allowed("99 Retired Projects") is True
 
 
 class TestChannelFilterNonJd:
@@ -213,7 +213,7 @@ class TestChannelFilterNonJd:
                 exclude_non_jd=True,
             )
         )
-        assert cf.is_channel_allowed("Helpdesk - ST") is False
+        assert cf.is_channel_allowed("Support Desk - EU") is False
         assert cf.is_channel_allowed("Catalyst Luncheon") is False
 
     def test_include_non_jd_when_configured(self):
@@ -223,7 +223,7 @@ class TestChannelFilterNonJd:
                 exclude_non_jd=False,
             )
         )
-        assert cf.is_channel_allowed("Helpdesk - ST") is True
+        assert cf.is_channel_allowed("Support Desk - EU") is True
 
 
 class TestChannelFilterPrivateStreams:
@@ -235,7 +235,7 @@ class TestChannelFilterPrivateStreams:
                 jd_allow_areas=[(0, 99)],
             )
         )
-        stream = {"name": "09.40 - 2026 All Staff", "invite_only": True}
+        stream = {"name": "09.40 - Leadership Team", "invite_only": True}
         assert cf.is_stream_allowed(stream) is False
 
     def test_allow_private_when_configured(self):
@@ -246,7 +246,7 @@ class TestChannelFilterPrivateStreams:
                 jd_allow_areas=[(0, 99)],
             )
         )
-        stream = {"name": "09.40 - 2026 All Staff", "invite_only": True}
+        stream = {"name": "09.40 - Leadership Team", "invite_only": True}
         assert cf.is_stream_allowed(stream) is True
 
     def test_public_stream_not_affected(self):
@@ -257,7 +257,7 @@ class TestChannelFilterPrivateStreams:
                 jd_allow_areas=[(0, 99)],
             )
         )
-        stream = {"name": "30 Infrastructure", "invite_only": False}
+        stream = {"name": "30 Platform Operations", "invite_only": False}
         assert cf.is_stream_allowed(stream) is True
 
 
@@ -267,21 +267,21 @@ class TestFilterStreams:
             ChannelFilterConfig(
                 enabled=True,
                 jd_allow_areas=[(30, 99)],
-                channel_exclude={"00.16 Prayer Requests"},
+                channel_exclude={"00.16 Personal Updates"},
             )
         )
         streams = [
-            {"name": "30 Infrastructure", "invite_only": False},
-            {"name": "00.16 Prayer Requests", "invite_only": False},
-            {"name": "84 BT Servant", "invite_only": False},
-            {"name": "Helpdesk - ST", "invite_only": False},
+            {"name": "30 Platform Operations", "invite_only": False},
+            {"name": "00.16 Personal Updates", "invite_only": False},
+            {"name": "84 Mobile App", "invite_only": False},
+            {"name": "Support Desk - EU", "invite_only": False},
         ]
         result = cf.filter_streams(streams)
         names = [s["name"] for s in result]
-        assert "30 Infrastructure" in names
-        assert "84 BT Servant" in names
-        assert "00.16 Prayer Requests" not in names
-        assert "Helpdesk - ST" not in names
+        assert "30 Platform Operations" in names
+        assert "84 Mobile App" in names
+        assert "00.16 Personal Updates" not in names
+        assert "Support Desk - EU" not in names
 
 
 class TestFilterMessages:
@@ -295,21 +295,21 @@ class TestFilterMessages:
         messages = [
             {
                 "type": "stream",
-                "display_recipient": "30 Infrastructure",
+                "display_recipient": "30 Platform Operations",
                 "content": "ok",
             },
             {
                 "type": "stream",
-                "display_recipient": "00.16 Prayer Requests",
+                "display_recipient": "00.16 Personal Updates",
                 "content": "pray",
             },
-            {"type": "stream", "display_recipient": "84 BT Servant", "content": "hi"},
+            {"type": "stream", "display_recipient": "84 Mobile App", "content": "hi"},
         ]
         result = cf.filter_messages(messages)
         recipients = [m["display_recipient"] for m in result]
-        assert "30 Infrastructure" in recipients
-        assert "84 BT Servant" in recipients
-        assert "00.16 Prayer Requests" not in recipients
+        assert "30 Platform Operations" in recipients
+        assert "84 Mobile App" in recipients
+        assert "00.16 Personal Updates" not in recipients
 
     def test_excludes_dms_when_configured(self):
         cf = ChannelFilter(
@@ -326,7 +326,7 @@ class TestFilterMessages:
             },
             {
                 "type": "stream",
-                "display_recipient": "30 Infrastructure",
+                "display_recipient": "30 Platform Operations",
                 "content": "ok",
             },
         ]
@@ -361,13 +361,13 @@ class TestRealisticConfig:
             ChannelFilterConfig(
                 enabled=True,
                 jd_allow_areas=[(1, 2), (14, 14), (30, 99)],
-                channel_include={"00.17 All unfoldingWord"},
+                channel_include={"00.17 All Staff"},
                 channel_exclude={
-                    "00.16 Prayer Requests",
-                    "00.18 General",
-                    "00.19 Family",
-                    "00.20 Random",
-                    "00.21 Encouragement",
+                    "00.16 Personal Updates",
+                    "00.18 Coffee Break",
+                    "00.19 Pets & Hobbies",
+                    "00.20 Off Topic",
+                    "00.21 Kudos",
                 },
                 exclude_non_jd=True,
                 exclude_dms=True,
@@ -376,34 +376,34 @@ class TestRealisticConfig:
         )
 
     def test_work_channels_allowed(self, uw_filter):
-        assert uw_filter.is_channel_allowed("30 Infrastructure") is True
-        assert uw_filter.is_channel_allowed("84 BT Servant") is True
-        assert uw_filter.is_channel_allowed("42 Comms & Public Relations") is True
-        assert uw_filter.is_channel_allowed("01 Knowledge base") is True
-        assert uw_filter.is_channel_allowed("02 Cohorts") is True
-        assert uw_filter.is_channel_allowed("14 Office & Facilities") is True
+        assert uw_filter.is_channel_allowed("30 Platform Operations") is True
+        assert uw_filter.is_channel_allowed("84 Mobile App") is True
+        assert uw_filter.is_channel_allowed("42 Marketing & Outreach") is True
+        assert uw_filter.is_channel_allowed("01 Company Wiki") is True
+        assert uw_filter.is_channel_allowed("02 Onboarding") is True
+        assert uw_filter.is_channel_allowed("14 Office Logistics") is True
 
     def test_sensitive_channels_blocked(self, uw_filter):
-        assert uw_filter.is_channel_allowed("00.16 Prayer Requests") is False
-        assert uw_filter.is_channel_allowed("00.18 General") is False
-        assert uw_filter.is_channel_allowed("00.19 Family") is False
-        assert uw_filter.is_channel_allowed("00.20 Random") is False
-        assert uw_filter.is_channel_allowed("00.21 Encouragement") is False
+        assert uw_filter.is_channel_allowed("00.16 Personal Updates") is False
+        assert uw_filter.is_channel_allowed("00.18 Coffee Break") is False
+        assert uw_filter.is_channel_allowed("00.19 Pets & Hobbies") is False
+        assert uw_filter.is_channel_allowed("00.20 Off Topic") is False
+        assert uw_filter.is_channel_allowed("00.21 Kudos") is False
 
     def test_explicit_include_from_sensitive_area(self, uw_filter):
-        assert uw_filter.is_channel_allowed("00.17 All unfoldingWord") is True
+        assert uw_filter.is_channel_allowed("00.17 All Staff") is True
 
     def test_non_jd_excluded(self, uw_filter):
-        assert uw_filter.is_channel_allowed("Helpdesk - ST") is False
+        assert uw_filter.is_channel_allowed("Support Desk - EU") is False
         assert uw_filter.is_channel_allowed("Catalyst Luncheon") is False
 
     def test_private_channels_excluded(self, uw_filter):
-        stream = {"name": "09.40 - 2026 All Staff", "invite_only": True}
+        stream = {"name": "09.40 - Leadership Team", "invite_only": True}
         assert uw_filter.is_stream_allowed(stream) is False
 
     def test_area_00_without_explicit_include_blocked(self, uw_filter):
         # Area 00 is not in jd_allow_areas, so unless explicitly included, blocked
-        assert uw_filter.is_channel_allowed("00.22 Some New Channel") is False
+        assert uw_filter.is_channel_allowed("00.22 Book Club") is False
 
 
 # --- Stream ID enforcement tests (P0 fix) ---
@@ -418,36 +418,36 @@ class TestStreamIdEnforcement:
             ChannelFilterConfig(
                 enabled=True,
                 jd_allow_areas=[(30, 99)],
-                channel_exclude={"00.16 Prayer Requests"},
+                channel_exclude={"00.16 Personal Updates"},
                 exclude_private=True,
             )
         )
         # Populate index as if get_streams returned these
         cf.update_stream_index(
             [
-                {"stream_id": 1, "name": "30 Infrastructure", "invite_only": False},
-                {"stream_id": 2, "name": "00.16 Prayer Requests", "invite_only": False},
-                {"stream_id": 3, "name": "09.40 - 2026 All Staff", "invite_only": True},
-                {"stream_id": 4, "name": "84 BT Servant", "invite_only": False},
-                {"stream_id": 5, "name": "Helpdesk - ST", "invite_only": False},
+                {"stream_id": 1, "name": "30 Platform Operations", "invite_only": False},
+                {"stream_id": 2, "name": "00.16 Personal Updates", "invite_only": False},
+                {"stream_id": 3, "name": "09.40 - Leadership Team", "invite_only": True},
+                {"stream_id": 4, "name": "84 Mobile App", "invite_only": False},
+                {"stream_id": 5, "name": "Support Desk - EU", "invite_only": False},
             ]
         )
         return cf
 
     def test_allowed_stream_by_id(self, filter_with_index):
-        assert filter_with_index.is_stream_id_allowed(1) is True  # 30 Infrastructure
-        assert filter_with_index.is_stream_id_allowed(4) is True  # 84 BT Servant
+        assert filter_with_index.is_stream_id_allowed(1) is True  # 30 Platform Operations
+        assert filter_with_index.is_stream_id_allowed(4) is True  # 84 Mobile App
 
     def test_blocked_stream_by_id_name_filter(self, filter_with_index):
         assert (
             filter_with_index.is_stream_id_allowed(2) is False
-        )  # 00.16 Prayer Requests
+        )  # 00.16 Personal Updates
 
     def test_blocked_stream_by_id_private(self, filter_with_index):
         assert filter_with_index.is_stream_id_allowed(3) is False  # private channel
 
     def test_blocked_stream_by_id_non_jd(self, filter_with_index):
-        assert filter_with_index.is_stream_id_allowed(5) is False  # Helpdesk - ST
+        assert filter_with_index.is_stream_id_allowed(5) is False  # Support Desk - EU
 
     def test_unknown_stream_id_denied_by_default(self, filter_with_index):
         # Default: unknown IDs denied (fail-closed) for org deployments
@@ -463,7 +463,7 @@ class TestStreamIdEnforcement:
         )
         cf.update_stream_index(
             [
-                {"stream_id": 1, "name": "30 Infrastructure", "invite_only": False},
+                {"stream_id": 1, "name": "30 Platform Operations", "invite_only": False},
             ]
         )
         assert cf.is_stream_id_allowed(1) is True
@@ -473,7 +473,7 @@ class TestStreamIdEnforcement:
         # Updating index again should not break anything
         filter_with_index.update_stream_index(
             [
-                {"stream_id": 1, "name": "30 Infrastructure", "invite_only": False},
+                {"stream_id": 1, "name": "30 Platform Operations", "invite_only": False},
             ]
         )
         assert filter_with_index.is_stream_id_allowed(1) is True
@@ -497,15 +497,15 @@ class TestPrivacyAwareNameCheck:
             [
                 {
                     "stream_id": 10,
-                    "name": "09.40 - 2026 All Staff",
+                    "name": "09.40 - Leadership Team",
                     "invite_only": True,
                 },
-                {"stream_id": 11, "name": "30 Infrastructure", "invite_only": False},
+                {"stream_id": 11, "name": "30 Platform Operations", "invite_only": False},
             ]
         )
         # Name passes JD filter but is private — should be blocked
-        assert cf.is_channel_allowed_with_privacy("09.40 - 2026 All Staff") is False
-        assert cf.is_channel_allowed_with_privacy("30 Infrastructure") is True
+        assert cf.is_channel_allowed_with_privacy("09.40 - Leadership Team") is False
+        assert cf.is_channel_allowed_with_privacy("30 Platform Operations") is True
 
     def test_falls_back_when_not_in_index(self):
         cf = ChannelFilter(
@@ -516,8 +516,8 @@ class TestPrivacyAwareNameCheck:
             )
         )
         # No index populated — falls back to name-only check
-        assert cf.is_channel_allowed_with_privacy("30 Infrastructure") is True
-        assert cf.is_channel_allowed_with_privacy("01 Knowledge base") is False
+        assert cf.is_channel_allowed_with_privacy("30 Platform Operations") is True
+        assert cf.is_channel_allowed_with_privacy("01 Company Wiki") is False
 
 
 # --- Env parsing error handling (P1 fix) ---
@@ -569,7 +569,7 @@ class TestBlockedCounters:
                 },
                 {
                     "type": "stream",
-                    "display_recipient": "01 Knowledge base",
+                    "display_recipient": "01 Company Wiki",
                     "content": "x",
                 },
             ]

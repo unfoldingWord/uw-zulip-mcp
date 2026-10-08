@@ -16,6 +16,8 @@ beyond process lifetime; values are read on demand.
 
     Key cache
       ZULIPCHAT_KEY_CACHE_TTL_SECONDS   Sliding inactivity TTL (default 86400)
+      ZULIPCHAT_REENROLL_ON_AUTH_FAILURE  On a Zulip auth rejection, clear the
+                                        stored key and re-enroll (default true)
 
     Enrollment web flow
       ZULIPCHAT_ENROLL_MAX_ATTEMPTS     Failed tries before cool-off (default 6)
@@ -24,6 +26,13 @@ beyond process lifetime; values are read on demand.
       ZULIPCHAT_ENROLL_SECRET           HMAC secret for enrollment links
       ZULIPCHAT_PUBLIC_URL              Public URL of this server (for links);
                                         falls back to ZULIPCHAT_AUTH_BASE_URL
+
+    Identity allowlist (hosted mode)
+      ZULIPCHAT_ALLOWED_EMAIL_DOMAINS   Comma/space-separated domains allowed
+                                        to use the server (e.g. unfoldingword.org)
+      ZULIPCHAT_ALLOWED_EMAILS          Comma/space-separated explicit addresses
+                                        allowed in addition to the domains
+                                        (both unset = deny all; fail-closed)
 """
 
 from __future__ import annotations
@@ -121,6 +130,17 @@ def key_cache_ttl_seconds() -> int:
     return _int_env("ZULIPCHAT_KEY_CACHE_TTL_SECONDS", 86_400)
 
 
+def reenroll_on_auth_failure() -> bool:
+    """When true, a Zulip auth rejection clears the stored key and re-enrolls.
+
+    If Zulip rejects a user's stored API key (they rotated or revoked it), drop
+    the cached copy, delete the vault secret, and hand back an enrollment link
+    on that same call. Default true. Set false to keep the stale key in the
+    vault and only surface Zulip's error (no automatic deletion).
+    """
+    return env_bool("ZULIPCHAT_REENROLL_ON_AUTH_FAILURE", True)
+
+
 # --- Enrollment ------------------------------------------------------------
 
 
@@ -169,3 +189,57 @@ def public_base_url() -> str | None:
         or os.getenv("ZULIPCHAT_AUTH_BASE_URL", "").strip()
     )
     return url.rstrip("/") or None
+
+
+# --- Identity allowlist ----------------------------------------------------
+
+
+def allowed_email_domains() -> frozenset[str]:
+    """Lower-cased email domains allowed to use the server (hosted mode).
+
+    From ZULIPCHAT_ALLOWED_EMAIL_DOMAINS (comma- or space-separated). A leading
+    ``@`` or ``.`` is stripped, so ``unfoldingword.org``, ``@unfoldingword.org``
+    and ``.unfoldingword.org`` are equivalent. Matching is exact per domain
+    (a listed ``unfoldingword.org`` does not implicitly allow subdomains).
+    """
+    raw = os.getenv("ZULIPCHAT_ALLOWED_EMAIL_DOMAINS", "")
+    out = set()
+    for item in raw.replace(",", " ").split():
+        domain = item.strip().lower().lstrip("@").lstrip(".")
+        if domain:
+            out.add(domain)
+    return frozenset(out)
+
+
+def allowed_emails() -> frozenset[str]:
+    """Explicit lower-cased email addresses allowed (e.g. external collaborators).
+
+    From ZULIPCHAT_ALLOWED_EMAILS (comma- or space-separated).
+    """
+    raw = os.getenv("ZULIPCHAT_ALLOWED_EMAILS", "")
+    out = {e.strip().lower() for e in raw.replace(",", " ").split()}
+    return frozenset(e for e in out if e)
+
+
+def identity_allowlist_configured() -> bool:
+    """True when at least one allowlist (domains or explicit emails) is set."""
+    return bool(allowed_email_domains() or allowed_emails())
+
+
+def is_identity_allowed(email: str) -> bool:
+    """Whether an authenticated OAuth identity may use the server.
+
+    Fail-closed: when no allowlist is configured, access is denied — set
+    ZULIPCHAT_ALLOWED_EMAIL_DOMAINS and/or ZULIPCHAT_ALLOWED_EMAILS to grant
+    access. With an allowlist set, an identity is allowed when its exact address
+    is in the email allowlist OR its domain is in the domain allowlist.
+    """
+    domains = allowed_email_domains()
+    emails = allowed_emails()
+    if not domains and not emails:
+        return False
+    addr = email.strip().lower()
+    if addr in emails:
+        return True
+    _local, _at, domain = addr.rpartition("@")
+    return bool(domain) and domain in domains

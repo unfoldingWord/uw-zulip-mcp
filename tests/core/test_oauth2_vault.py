@@ -10,6 +10,8 @@ from src.zulipchat_mcp.core.enrollment import (
     CoolOff,
     EnrollOutcome,
     EnrollResult,
+    UsedTokens,
+    enrollment_token_expiry,
     mint_enrollment_token,
     try_enroll,
     verify_enrollment_token,
@@ -26,6 +28,17 @@ def _reset_runtime():
     hosted_runtime.reset()
     yield
     hosted_runtime.reset()
+
+
+@pytest.fixture(autouse=True)
+def _default_allowlist(monkeypatch):
+    """Allow the test domains by default (the gate is fail-closed).
+
+    Most tests use ``@x.org`` identities and do not care about the allowlist;
+    allowlist-specific tests override or clear these with monkeypatch.
+    """
+    monkeypatch.setenv("ZULIPCHAT_ALLOWED_EMAIL_DOMAINS", "x.org")
+    monkeypatch.delenv("ZULIPCHAT_ALLOWED_EMAILS", raising=False)
 
 
 # --- key cache -------------------------------------------------------------
@@ -253,6 +266,92 @@ async def test_resolver_no_identity_returns_none(monkeypatch):
     assert creds is None
 
 
+# --- identity allowlist ----------------------------------------------------
+
+
+def test_is_identity_allowed_denies_when_unset(monkeypatch):
+    from src.zulipchat_mcp.core import hosted_config
+
+    monkeypatch.delenv("ZULIPCHAT_ALLOWED_EMAIL_DOMAINS", raising=False)
+    monkeypatch.delenv("ZULIPCHAT_ALLOWED_EMAILS", raising=False)
+    assert hosted_config.identity_allowlist_configured() is False
+    # Fail-closed: nothing configured means nobody is allowed.
+    assert hosted_config.is_identity_allowed("anyone@anywhere.example") is False
+
+
+def test_is_identity_allowed_domain_and_email(monkeypatch):
+    from src.zulipchat_mcp.core import hosted_config
+
+    monkeypatch.setenv("ZULIPCHAT_ALLOWED_EMAIL_DOMAINS", "@UnfoldingWord.org, .b.org")
+    monkeypatch.setenv("ZULIPCHAT_ALLOWED_EMAILS", "Friend@Partner.ORG")
+    assert hosted_config.identity_allowlist_configured() is True
+    # domain match (case-insensitive, '@'/'.' prefixes normalized)
+    assert hosted_config.is_identity_allowed("Someone@unfoldingword.org") is True
+    assert hosted_config.is_identity_allowed("x@b.org") is True
+    # explicit email match (case-insensitive)
+    assert hosted_config.is_identity_allowed("friend@partner.org") is True
+    # not allowed
+    assert hosted_config.is_identity_allowed("stranger@gmail.com") is False
+    # subdomain is not implicitly allowed
+    assert hosted_config.is_identity_allowed("x@sub.unfoldingword.org") is False
+    # malformed (no domain) is not allowed
+    assert hosted_config.is_identity_allowed("nodomain") is False
+
+
+async def test_resolver_rejects_when_no_allowlist(monkeypatch):
+    # Fail-closed: with no allowlist configured, even a would-be valid user is
+    # rejected before any vault read.
+    monkeypatch.delenv("ZULIPCHAT_ALLOWED_EMAIL_DOMAINS", raising=False)
+    monkeypatch.delenv("ZULIPCHAT_ALLOWED_EMAILS", raising=False)
+    monkeypatch.setattr(credential_resolver, "oauth_email", lambda: "u@x.org")
+    store = _FakeStore(keys={"u@x.org": KEY})
+    hosted_runtime.set_key_cache(SlidingKeyCache(ttl_seconds=100))
+    hosted_runtime.set_secret_store(store)
+
+    with pytest.raises(credential_resolver.IdentityNotAllowed):
+        await credential_resolver.resolve_request_credentials()
+    assert store.get_calls == 0
+
+
+async def test_resolver_rejects_identity_not_allowed(monkeypatch):
+    monkeypatch.setenv("ZULIPCHAT_ALLOWED_EMAIL_DOMAINS", "unfoldingword.org")
+    monkeypatch.delenv("ZULIPCHAT_ALLOWED_EMAILS", raising=False)
+    monkeypatch.setattr(
+        credential_resolver, "oauth_email", lambda: "stranger@gmail.com"
+    )
+    store = _FakeStore()
+    hosted_runtime.set_key_cache(SlidingKeyCache(ttl_seconds=100))
+    hosted_runtime.set_secret_store(store)
+
+    with pytest.raises(credential_resolver.IdentityNotAllowed) as ei:
+        await credential_resolver.resolve_request_credentials()
+    assert ei.value.email == "stranger@gmail.com"
+    assert store.get_calls == 0  # gate runs before any vault read
+
+
+async def test_resolver_allows_domain_member(monkeypatch):
+    monkeypatch.setenv("ZULIPCHAT_ALLOWED_EMAIL_DOMAINS", "unfoldingword.org")
+    monkeypatch.setattr(
+        credential_resolver, "oauth_email", lambda: "u@unfoldingword.org"
+    )
+    hosted_runtime.set_key_cache(SlidingKeyCache(ttl_seconds=100))
+    hosted_runtime.set_secret_store(_FakeStore(keys={"u@unfoldingword.org": KEY}))
+    creds = await credential_resolver.resolve_request_credentials()
+    assert creds is not None and creds.api_key == KEY
+
+
+async def test_resolver_allows_explicit_email(monkeypatch):
+    monkeypatch.delenv("ZULIPCHAT_ALLOWED_EMAIL_DOMAINS", raising=False)
+    monkeypatch.setenv("ZULIPCHAT_ALLOWED_EMAILS", "friend@partner.org")
+    monkeypatch.setattr(
+        credential_resolver, "oauth_email", lambda: "friend@partner.org"
+    )
+    hosted_runtime.set_key_cache(SlidingKeyCache(ttl_seconds=100))
+    hosted_runtime.set_secret_store(_FakeStore(keys={"friend@partner.org": KEY}))
+    creds = await credential_resolver.resolve_request_credentials()
+    assert creds is not None and creds.api_key == KEY
+
+
 async def test_resolver_isolates_two_users(monkeypatch):
     cache = SlidingKeyCache(ttl_seconds=100)
     store = _FakeStore(keys={"a@x.org": "a" * 32, "b@x.org": "b" * 32})
@@ -406,6 +505,36 @@ def test_enroll_get_valid_token_shows_form(monkeypatch):
     assert resp.headers.get("Cache-Control") == "no-store"
 
 
+def test_enroll_page_title_is_static(monkeypatch):
+    from starlette.testclient import TestClient
+
+    monkeypatch.setenv("ZULIPCHAT_ENROLL_SECRET", SECRET)
+    client = TestClient(_enroll_app())
+    tok = mint_enrollment_token("u@x.org")
+
+    form = client.get(f"/enroll?token={tok}").text
+    invalid = client.get("/enroll?token=bad").text
+
+    # Same <title> on every page...
+    assert "<title>ZulipChat MCP — Enrollment</title>" in form
+    assert "<title>ZulipChat MCP — Enrollment</title>" in invalid
+    # ...while the visible <h1> heading still differs per state.
+    assert "<h1>Add your Zulip API key</h1>" in form
+    assert "<h1>Link expired or invalid</h1>" in invalid
+
+
+def test_enroll_form_shows_expiry(monkeypatch):
+    from starlette.testclient import TestClient
+
+    monkeypatch.setenv("ZULIPCHAT_ENROLL_SECRET", SECRET)
+    tok = mint_enrollment_token("u@x.org")  # default TTL (15 min)
+    resp = TestClient(_enroll_app()).get(f"/enroll?token={tok}")
+    assert resp.status_code == 200
+    assert "expires at" in resp.text
+    assert "UTC" in resp.text
+    assert "minute" in resp.text
+
+
 def test_enroll_post_success(monkeypatch):
     from unittest.mock import AsyncMock, MagicMock
 
@@ -438,6 +567,126 @@ def test_enroll_post_invalid_token_rejected(monkeypatch):
         "/enroll", data={"token": "bad", "api_key": "a" * 32}
     )
     assert resp.status_code == 400
+
+
+def test_enroll_get_not_allowed_identity(monkeypatch):
+    from starlette.testclient import TestClient
+
+    monkeypatch.setenv("ZULIPCHAT_ENROLL_SECRET", SECRET)
+    monkeypatch.setenv("ZULIPCHAT_ALLOWED_EMAIL_DOMAINS", "unfoldingword.org")
+    monkeypatch.delenv("ZULIPCHAT_ALLOWED_EMAILS", raising=False)
+    # Valid, unexpired token but the identity is not on the allowlist.
+    tok = mint_enrollment_token("stranger@gmail.com")
+    resp = TestClient(_enroll_app()).get(f"/enroll?token={tok}")
+    assert resp.status_code == 403
+    assert "not authorized" in resp.text.lower()
+
+
+# --- single-use links ------------------------------------------------------
+
+
+def test_used_tokens_marks_and_expires():
+    import time
+
+    ut = UsedTokens()
+    assert ut.is_used("tok") is False
+    ut.mark_used("tok", expiry=time.time() + 100)
+    assert ut.is_used("tok") is True
+    # Other tokens are unaffected.
+    assert ut.is_used("other") is False
+
+
+def test_used_tokens_record_expires_with_token():
+    import time
+
+    ut = UsedTokens()
+    ut.mark_used("tok", expiry=time.time() - 1)  # already past
+    assert ut.is_used("tok") is False  # expired record is swept
+
+
+def test_enrollment_token_expiry_roundtrip(monkeypatch):
+    monkeypatch.setenv("ZULIPCHAT_ENROLL_SECRET", SECRET)
+    tok = mint_enrollment_token("u@x.org", secret=SECRET, ttl_seconds=900)
+    exp = enrollment_token_expiry(tok)
+    assert exp is not None and exp > 0
+    assert enrollment_token_expiry("garbage") is None
+
+
+def _post_success_app(monkeypatch):
+    """Enroll app whose try_enroll always succeeds; returns (TestClient, token)."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    from starlette.testclient import TestClient
+
+    from src.zulipchat_mcp.core import enrollment_routes
+
+    monkeypatch.setenv("ZULIPCHAT_ENROLL_SECRET", SECRET)
+    tok = mint_enrollment_token("u@x.org")
+    cfg = MagicMock()
+    cfg.config.site = "https://z.example"
+    monkeypatch.setattr(enrollment_routes, "get_config_manager", lambda: cfg)
+    monkeypatch.setattr(
+        enrollment_routes,
+        "try_enroll",
+        AsyncMock(return_value=EnrollResult(EnrollOutcome.SUCCESS, "ok")),
+    )
+    return TestClient(_enroll_app()), tok
+
+
+def test_enroll_link_single_use_post(monkeypatch):
+    client, tok = _post_success_app(monkeypatch)
+
+    first = client.post("/enroll", data={"token": tok, "api_key": "a" * 32})
+    assert first.status_code == 200
+    assert "saved" in first.text.lower()
+
+    # Same link again: rejected as already used.
+    second = client.post("/enroll", data={"token": tok, "api_key": "a" * 32})
+    assert second.status_code == 400
+    assert "already been used" in second.text.lower()
+
+
+def test_enroll_used_link_get_shows_used_page(monkeypatch):
+    client, tok = _post_success_app(monkeypatch)
+    client.post("/enroll", data={"token": tok, "api_key": "a" * 32})
+
+    resp = client.get(f"/enroll?token={tok}")
+    assert resp.status_code == 400
+    assert "already been used" in resp.text.lower()
+
+
+def test_enroll_failed_attempt_does_not_consume(monkeypatch):
+    from unittest.mock import AsyncMock, MagicMock
+
+    from starlette.testclient import TestClient
+
+    from src.zulipchat_mcp.core import enrollment_routes
+
+    monkeypatch.setenv("ZULIPCHAT_ENROLL_SECRET", SECRET)
+    tok = mint_enrollment_token("u@x.org")
+    cfg = MagicMock()
+    cfg.config.site = "https://z.example"
+    monkeypatch.setattr(enrollment_routes, "get_config_manager", lambda: cfg)
+    # First a rejection, then a success — the link must survive the rejection.
+    monkeypatch.setattr(
+        enrollment_routes,
+        "try_enroll",
+        AsyncMock(
+            side_effect=[
+                EnrollResult(EnrollOutcome.INVALID_KEY, "bad", remaining_tries=5),
+                EnrollResult(EnrollOutcome.SUCCESS, "ok"),
+            ]
+        ),
+    )
+    client = TestClient(_enroll_app())
+
+    bad = client.post("/enroll", data={"token": tok, "api_key": "a" * 32})
+    assert bad.status_code == 200  # form re-shown with an error, link not consumed
+    assert "already been used" not in bad.text.lower()
+
+    good = client.post("/enroll", data={"token": tok, "api_key": "a" * 32})
+    assert good.status_code == 200
+    assert "saved" in good.text.lower()
 
 
 # --- auth scopes -----------------------------------------------------------

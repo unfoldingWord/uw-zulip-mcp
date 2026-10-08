@@ -93,8 +93,8 @@ zulipchat-mcp [options]
 ```env
 ZULIPCHAT_CHANNEL_FILTER_ENABLED=true
 ZULIPCHAT_JD_ALLOW_AREAS=01,02,14,30-99
-ZULIPCHAT_CHANNEL_INCLUDE=00.17 All unfoldingWord
-ZULIPCHAT_CHANNEL_EXCLUDE=00.16 Prayer Requests,00.18 General,00.19 Family,00.20 Random,00.21 Encouragement
+ZULIPCHAT_CHANNEL_INCLUDE=00.17 All Staff
+ZULIPCHAT_CHANNEL_EXCLUDE=00.16 Personal Updates,00.18 Coffee Break,00.19 Pets & Hobbies,00.20 Off Topic,00.21 Kudos
 ZULIPCHAT_EXCLUDE_DMS=true
 ZULIPCHAT_EXCLUDE_PRIVATE=true
 ```
@@ -121,6 +121,8 @@ Full guide: [Hosted Mode & Authentication](hosted-authentication.md).
 | `ZULIPCHAT_AUTH_JWKS_URI` / `ZULIPCHAT_AUTH_ISSUER` / `ZULIPCHAT_AUTH_AUDIENCE` | — | JWT verification (`jwt`) |
 | `ZULIPCHAT_AUTH_STATIC_TOKENS` | — | Comma-separated bearer tokens (`static`, dev/test only) |
 | `ZULIPCHAT_AUTH_SCOPES` | `openid email profile` | Scopes to request (`google`, `oidc`). The email scope is required — users are keyed by email |
+| `ZULIPCHAT_ALLOWED_EMAIL_DOMAINS` | — | Comma/space-separated email domains allowed to use the server (e.g. `unfoldingword.org`). Fail-closed: if this and `ZULIPCHAT_ALLOWED_EMAILS` are both unset, all identities are rejected (with a startup warning) |
+| `ZULIPCHAT_ALLOWED_EMAILS` | — | Comma/space-separated explicit email addresses allowed in addition to the domains (for external collaborators) |
 
 #### OpenBao / Vault (user key store)
 
@@ -146,6 +148,7 @@ Full guide: [Hosted Mode & Authentication](hosted-authentication.md).
 | `ZULIPCHAT_ENROLL_MAX_ATTEMPTS` | `6` | Failed submissions before a cool-off |
 | `ZULIPCHAT_ENROLL_COOLOFF_SECONDS` | `900` | Cool-off duration after too many failures |
 | `ZULIPCHAT_KEY_CACHE_TTL_SECONDS` | `86400` | In-memory key cache inactivity TTL (sliding) |
+| `ZULIPCHAT_REENROLL_ON_AUTH_FAILURE` | `true` | On a Zulip auth rejection, clear the stored key (cache + vault) and re-enroll |
 
 ### Audit logging
 
@@ -179,6 +182,40 @@ Full guide: [Hosted Mode & Authentication](hosted-authentication.md).
 |----------|---------|-------------|
 | `ZULIPCHAT_QUIET` | `false` | Suppress startup privacy notice |
 | `MCP_DEBUG` | `false` | Debug logging |
+| `ZULIPCHAT_DB_PATH` | `.mcp/zulipchat/zulipchat.duckdb` | Path to the local DuckDB file (relative to the working directory). See [Local state & persistence](#local-state--persistence) |
+
+## Local state & persistence
+
+The server keeps a small amount of local state in an embedded **DuckDB**
+database at `ZULIPCHAT_DB_PATH` (default `.mcp/zulipchat/zulipchat.duckdb`,
+relative to the working directory). It holds exactly two kinds of data:
+
+- **Rebuildable caches** — `users_cache`, `streams_cache`. Re-fetched from Zulip
+  if lost, so losing them is harmless.
+- **Agent control plane + message-listener state** — agent sessions, instances,
+  profiles, requests/events, pending user-input requests, the task queue, and
+  the listener position.
+
+It does **not** hold: scheduled messages (those use Zulip's native
+`scheduled_messages` API, stored on Zulip), user Zulip API keys (OpenBao/Vault),
+OAuth client/token state (FastMCP's own file store — see the deployment notes in
+[Hosted Mode & Authentication](hosted-authentication.md)), or configuration.
+
+**In a container the DB sits on the ephemeral writable layer**, so recreating
+the container wipes it. With `--disable-agents` that only drops the caches
+(harmless — they rebuild). If you run the agent control plane or message
+listener, mount a volume and point `ZULIPCHAT_DB_PATH` at it, writable by the
+container user (uid `65532`):
+
+```yaml
+environment:
+  ZULIPCHAT_DB_PATH: /data/zulipchat/zulipchat.duckdb
+volumes:
+  - zulipchat-db:/data/zulipchat   # must be writable by uid 65532
+```
+
+DuckDB is single-writer (one process holds a write lock on the file), so do
+**not** point multiple replicas at the same mounted DB file.
 
 ## Transport modes
 
@@ -277,5 +314,4 @@ Run the server and call `server_info` from your MCP client.
 - [Installation](installation.md)
 - [Setup Wizard](setup-wizard.md)
 - [Architecture](../developer-guide/architecture.md)
-- [Team Overview](../uw-zulip-mcp-overview.md)
 - [Security Policy](../../SECURITY.md)

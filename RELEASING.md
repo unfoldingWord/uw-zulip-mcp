@@ -9,9 +9,10 @@ the failed command plus the gate that contains it.
 
 | Stage | Branch / trigger | Image tags |
 |-------|------------------|-----------|
-| Develop (rolling) | push to `develop` | `latest`, `develop`, `develop-<sha>` |
-| Traceability | push to `main` | `main`, `main-<sha>` |
-| Production (release) | tag `vX.Y.Z` on `main` | `X.Y.Z`, `X.Y`, `X`, `stable` |
+| Develop (rolling) | push to `develop` | `latest`, `develop-<sha>` |
+| Production (release) | tag `vX.Y.Z` on `main` | `X.Y.Z`, `stable` |
+
+Pushes to `main` do not build an image; only release tags do.
 
 `develop` auto-publishes `latest` on every push. **A production/`stable` image is
 cut only by tagging a release** — that is what "release" means here.
@@ -128,7 +129,7 @@ git tag vX.Y.Z
 git push --tags
 ```
 Pushing the `vX.Y.Z` tag triggers `.github/workflows/docker-build-push.yaml`,
-which builds and pushes `X.Y.Z`, `X.Y`, `X`, and `stable` to Docker Hub.
+which builds and pushes `X.Y.Z` and `stable` to Docker Hub.
 
 Optional GitHub release notes:
 ```bash

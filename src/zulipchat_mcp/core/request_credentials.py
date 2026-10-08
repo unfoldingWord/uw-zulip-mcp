@@ -37,8 +37,29 @@ class RequestCredentials:
         return digest[:16]
 
 
+@dataclass
+class AuthFailureSignal:
+    """Per-request flag tripped when Zulip rejects the user's stored API key.
+
+    Shared *by reference* (not via a contextvar write) so that a trip happening
+    inside a worker thread — tools may run the blocking Zulip call through
+    ``asyncio.to_thread`` — is still visible to the middleware after the tool
+    call returns. A plain contextvar mutation in that thread would not
+    propagate back to the request context.
+    """
+
+    triggered: bool = False
+
+    def trip(self) -> None:
+        self.triggered = True
+
+
 _request_credentials: ContextVar[RequestCredentials | None] = ContextVar(
     "zulip_request_credentials", default=None
+)
+
+_auth_failure_signal: ContextVar[AuthFailureSignal | None] = ContextVar(
+    "zulip_auth_failure_signal", default=None
 )
 
 # Process-level hosted-mode flag, set once at server startup.
@@ -71,6 +92,27 @@ def bind_request_credentials(
 def unbind_request_credentials(token: Token[RequestCredentials | None]) -> None:
     """Restore the previous credential binding."""
     _request_credentials.reset(token)
+
+
+def bind_auth_failure_signal(
+    signal: AuthFailureSignal | None,
+) -> Token[AuthFailureSignal | None]:
+    """Bind a per-request auth-failure signal. Pair with unbind in finally."""
+    return _auth_failure_signal.set(signal)
+
+
+def unbind_auth_failure_signal(token: Token[AuthFailureSignal | None]) -> None:
+    """Restore the previous auth-failure signal binding."""
+    _auth_failure_signal.reset(token)
+
+
+def get_auth_failure_signal() -> AuthFailureSignal | None:
+    """The auth-failure signal bound to the current request, if any.
+
+    Read in the request context (e.g. when a Zulip client is built) so the
+    client can trip the same object later, possibly from a worker thread.
+    """
+    return _auth_failure_signal.get()
 
 
 def current_cache_scope() -> str:

@@ -7,9 +7,10 @@ Analytics moved to ai_analytics.py for LLM elicitation.
 from collections import Counter
 from datetime import datetime, timedelta
 from difflib import SequenceMatcher
-from typing import Any, Literal, TypedDict, cast
+from typing import Annotated, Any, Literal, TypedDict, cast
 
 from fastmcp import FastMCP
+from pydantic import Field
 
 from ..config import get_client
 from ..core.client import ZulipClientWrapper
@@ -198,25 +199,109 @@ def build_narrow(
 
 async def search_messages(
     # Basic search parameters
-    query: str | None = None,
-    stream: str | None = None,
-    topic: str | None = None,
-    sender: str | None = None,
+    query: Annotated[
+        str | None,
+        Field(
+            description=(
+                "Free-text to match in message content; Zulip search operators "
+                "are allowed. Omit to match any content. e.g. 'release notes'."
+            )
+        ),
+    ] = None,
+    stream: Annotated[
+        str | None,
+        Field(description="Restrict to this stream/channel name. e.g. 'general'."),
+    ] = None,
+    topic: Annotated[
+        str | None,
+        Field(
+            description=("Restrict to this topic within the stream. e.g. 'deploys'.")
+        ),
+    ] = None,
+    sender: Annotated[
+        str | None,
+        Field(
+            description=(
+                "Sender email or display name (a name is fuzzy-resolved to an "
+                "account). e.g. 'ana@example.org' or 'Ana'."
+            )
+        ),
+    ] = None,
     # Advanced content filters
-    has_attachment: bool | None = None,
-    has_link: bool | None = None,
-    has_image: bool | None = None,
-    is_private: bool | None = None,
-    is_starred: bool | None = None,
-    is_mentioned: bool | None = None,
+    has_attachment: Annotated[
+        bool | None,
+        Field(description="If true, only messages that contain a file attachment."),
+    ] = None,
+    has_link: Annotated[
+        bool | None,
+        Field(description="If true, only messages that contain a link."),
+    ] = None,
+    has_image: Annotated[
+        bool | None,
+        Field(description="If true, only messages that contain an image."),
+    ] = None,
+    is_private: Annotated[
+        bool | None,
+        Field(
+            description=(
+                "If true, only direct (private) messages; if false, only stream "
+                "messages."
+            )
+        ),
+    ] = None,
+    is_starred: Annotated[
+        bool | None,
+        Field(description="If true, only messages you have starred."),
+    ] = None,
+    is_mentioned: Annotated[
+        bool | None,
+        Field(description="If true, only messages that mention you."),
+    ] = None,
     # Time filters
-    last_hours: int | str | None = None,
-    last_days: int | str | None = None,
-    after_time: datetime | str | None = None,
-    before_time: datetime | str | None = None,
+    last_hours: Annotated[
+        int | str | None,
+        Field(description="Only messages from the last N hours. e.g. 24."),
+    ] = None,
+    last_days: Annotated[
+        int | str | None,
+        Field(description="Only messages from the last N days. e.g. 7."),
+    ] = None,
+    after_time: Annotated[
+        datetime | str | None,
+        Field(
+            description=(
+                "Only messages at or after this time (ISO 8601). e.g. "
+                "'2026-10-01T00:00:00'."
+            )
+        ),
+    ] = None,
+    before_time: Annotated[
+        datetime | str | None,
+        Field(
+            description=(
+                "Only messages at or before this time (ISO 8601). e.g. "
+                "'2026-10-07T23:59:59'."
+            )
+        ),
+    ] = None,
     # Response control
-    limit: int = 50,
-    sort_by: Literal["newest", "oldest", "relevance"] = "relevance",
+    limit: Annotated[
+        int,
+        Field(
+            ge=1,
+            le=1000,
+            description="Maximum messages to return, 1-1000. e.g. 50.",
+        ),
+    ] = 50,
+    sort_by: Annotated[
+        Literal["newest", "oldest", "relevance"],
+        Field(
+            description=(
+                "Order of results: 'newest' or 'oldest' by time, or 'relevance'. "
+                "e.g. 'relevance'."
+            )
+        ),
+    ] = "relevance",
 ) -> dict[str, Any]:
     """Advanced search with fuzzy user resolution and comprehensive filtering."""
     client = get_client()

@@ -11,7 +11,7 @@ enrollment link.
 from __future__ import annotations
 
 from ..utils.logging import get_logger
-from . import hosted_runtime
+from . import hosted_config, hosted_runtime
 from .request_credentials import RequestCredentials
 from .secret_store import SecretStoreError
 
@@ -23,6 +23,14 @@ class EnrollmentRequired(Exception):
 
     def __init__(self, email: str) -> None:
         super().__init__(f"No Zulip API key on file for {email}")
+        self.email = email
+
+
+class IdentityNotAllowed(Exception):
+    """Raised when an authenticated identity is not on the server allowlist."""
+
+    def __init__(self, email: str) -> None:
+        super().__init__(f"Identity not allowed to use this server: {email}")
         self.email = email
 
 
@@ -57,13 +65,19 @@ async def resolve_request_credentials() -> RequestCredentials | None:
     """Resolve the current request's Zulip credentials from OAuth + vault.
 
     Returns None when there is no authenticated OAuth identity (e.g. stdio or
-    an unauthenticated request). Raises EnrollmentRequired when the user is
-    authenticated but has no stored key, and CredentialResolutionUnavailable
-    when the vault is unreachable.
+    an unauthenticated request). Raises IdentityNotAllowed when the identity is
+    not on the server allowlist, EnrollmentRequired when the user is
+    authenticated and allowed but has no stored key, and
+    CredentialResolutionUnavailable when the vault is unreachable.
     """
     email = oauth_email()
     if not email:
         return None
+
+    # Gate on the identity allowlist before any vault work, so a non-allowed
+    # identity cannot drive vault reads or enrollment-link minting.
+    if not hosted_config.is_identity_allowed(email):
+        raise IdentityNotAllowed(email)
 
     cache = hosted_runtime.get_key_cache()
     cached = cache.get(email)

@@ -3,7 +3,6 @@ name: Build and Push Docker Image
 on:
   push:
     branches:
-      - main
       - develop
     tags:
       - 'v*'
@@ -35,18 +34,13 @@ jobs:
           images: |
             unfoldingword/zulipchat-mcp
           tags: |
-            # Branch images for traceability: `develop`, `main`, and a
-            # commit-pinned `<branch>-<sha>`.
-            type=ref,event=branch
+            # Develop stage: the default branch (develop) publishes `latest`
+            # and a commit-pinned `develop-<sha>`.
             type=sha,prefix={{branch}}-,enable=${{ github.ref_type == 'branch' }}
-            # Develop stage: the default branch (develop) publishes the rolling
-            # `latest` image.
             type=raw,value=latest,enable={{is_default_branch}}
-            # Production stage: a release tag `vX.Y.Z` publishes the semver
-            # images and `stable`.
+            # Production stage: a release tag `vX.Y.Z` publishes exactly two
+            # images — the full version and `stable`.
             type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
             type=raw,value=stable,enable=${{ github.ref_type == 'tag' }}
 
       - name: Build and push

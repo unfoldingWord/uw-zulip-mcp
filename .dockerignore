@@ -15,6 +15,12 @@ oauth-debug-notes.md
 *.pem
 *.key
 
+# Local working files and runtime state — not part of the source tree
+working-docs
+.claude
+.mcp
+.benchmarks
+
 # Virtual environments (rebuilt inside the image)
 .venv
 venv

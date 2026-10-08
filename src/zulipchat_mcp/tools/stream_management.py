@@ -4,29 +4,44 @@ READ-ONLY stream operations to protect organization from AI changes.
 Simple stream discovery and information retrieval only.
 """
 
-from typing import Any
+from typing import Annotated, Any
 
 from fastmcp import FastMCP
+from pydantic import Field
 
 from ..config import get_client
 
 
 async def get_streams(
-    include_subscribed: bool = True,
-    include_public: bool = True,
+    include_subscribed: Annotated[
+        bool,
+        Field(
+            description=("If true, include streams you are subscribed to. e.g. true.")
+        ),
+    ] = True,
+    include_public: Annotated[
+        bool,
+        Field(
+            description=(
+                "If true, also include public streams you are not subscribed "
+                "to; if false, exclude them (your subscriptions and private "
+                "streams still appear). e.g. true."
+            )
+        ),
+    ] = True,
 ) -> dict[str, Any]:
     """Get list of streams (READ-ONLY)."""
     client = get_client()
 
     try:
-        result = client.get_streams(include_subscribed=include_subscribed)
+        kwargs: dict[str, Any] = {"include_subscribed": include_subscribed}
+        # Let Zulip apply the public-stream filter natively; the old client-side
+        # invite_only filter wrongly dropped subscribed public streams too.
+        if not include_public:
+            kwargs["include_public"] = False
+        result = client.get_streams(**kwargs)
         if result.get("result") == "success":
             streams = result.get("streams", [])
-
-            # Apply filters
-            if not include_public:
-                streams = [s for s in streams if s.get("invite_only", False)]
-
             return {
                 "status": "success",
                 "streams": streams,
@@ -43,10 +58,42 @@ async def get_streams(
 
 
 async def get_stream_info(
-    stream_name: str | None = None,
-    stream_id: int | None = None,
-    include_subscribers: bool = False,
-    include_topics: bool = False,
+    stream_name: Annotated[
+        str | None,
+        Field(
+            description=(
+                "Stream/channel name to look up. Provide this or `stream_id`. "
+                "e.g. 'general'."
+            )
+        ),
+    ] = None,
+    stream_id: Annotated[
+        int | None,
+        Field(
+            description=(
+                "Numeric stream ID to look up. Provide this or `stream_name`; "
+                "takes precedence if both are given. e.g. 42."
+            )
+        ),
+    ] = None,
+    include_subscribers: Annotated[
+        bool,
+        Field(
+            description=(
+                "If true, add `subscribers` (array of user IDs) and "
+                "`subscriber_count` to the result. e.g. false."
+            )
+        ),
+    ] = False,
+    include_topics: Annotated[
+        bool,
+        Field(
+            description=(
+                "If true, add `topics` (recent topic objects) and `topic_count` "
+                "to the result. e.g. false."
+            )
+        ),
+    ] = False,
 ) -> dict[str, Any]:
     """Get detailed information about a specific stream (READ-ONLY)."""
     if not stream_name and not stream_id:

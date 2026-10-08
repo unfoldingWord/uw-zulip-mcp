@@ -18,16 +18,23 @@ class TestLogging:
             )
 
     def test_setup_structured_logging_with_structlog(self):
-        """Test structured logging setup when structlog is available."""
-        # Assuming structlog is installed in env
-        with (
-            patch("structlog.configure") as mock_configure,
-            patch("logging.basicConfig") as mock_basic_config,
-            patch("src.zulipchat_mcp.utils.logging.STRUCTLOG_AVAILABLE", True),
-        ):
-            logging_utils.setup_structured_logging("INFO")
+        """structlog is configured and a JSON root handler is installed."""
+        import structlog
+
+        root = logging.getLogger()
+        saved = root.handlers[:]
+        try:
+            with patch("structlog.configure") as mock_configure:
+                logging_utils.setup_structured_logging("INFO")
             mock_configure.assert_called()
-            mock_basic_config.assert_called()
+            # A single formatting handler now lives on the root logger, using
+            # structlog's ProcessorFormatter (what unifies app + foreign logs).
+            assert len(root.handlers) == 1
+            assert isinstance(
+                root.handlers[0].formatter, structlog.stdlib.ProcessorFormatter
+            )
+        finally:
+            root.handlers[:] = saved
 
     def test_setup_structured_logging_without_structlog(self):
         """Test structured logging setup falls back when structlog unavailable."""

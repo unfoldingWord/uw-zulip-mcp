@@ -40,6 +40,15 @@ from the vault (cached in memory) automatically.
 - **Identity binding:** a submitted key is stored only if Zulip confirms it and
   its Zulip email matches the OAuth email, so a user cannot bind someone else's
   account.
+- **Identity allowlist (fail-closed):** access requires `ZULIPCHAT_ALLOWED_EMAIL_DOMAINS`
+  and/or `ZULIPCHAT_ALLOWED_EMAILS` — list your org's domain plus any named
+  external collaborators. With neither set, every authenticated identity is
+  rejected (so you must configure it). Non-allowed identities are turned away
+  **before** any vault access, on both the tool path and the enrollment page,
+  so they cannot even drive a vault lookup. The OAuth app is a separate,
+  earlier gate — if you have no external collaborators, an Internal Google app
+  blocks non-org accounts outright; if you do, see
+  [The Google OAuth app and the allowlist are two different gates](#the-google-oauth-app-and-the-allowlist-are-two-different-gates).
 - **Zulip site: pinned server-side** (`ZULIP_SITE`). Clients cannot point the
   server at another host.
 - **Org bot key: server-side env/zuliprc**, unchanged, for the agent control
@@ -87,6 +96,63 @@ token has no email claim, tool calls fail with "no authenticated identity" and
 the server logs the claims it did receive. For `jwt` mode, ensure your IdP puts
 `email` in the JWT.
 
+### Restricting who may use the server
+
+Authentication (OAuth) decides who can *reach* the server; by itself it may
+admit any account the provider accepts (e.g. any Google account if the OAuth app
+is not restricted to your Workspace). Narrow this with an identity allowlist:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `ZULIPCHAT_ALLOWED_EMAIL_DOMAINS` | — | Comma/space-separated domains allowed (e.g. `unfoldingword.org`). A leading `@` or `.` is ignored; matching is exact per domain (no implicit subdomains) |
+| `ZULIPCHAT_ALLOWED_EMAILS` | — | Comma/space-separated explicit addresses allowed in addition to the domains |
+
+An identity is allowed when its exact address is in `ZULIPCHAT_ALLOWED_EMAILS`
+**or** its domain is in `ZULIPCHAT_ALLOWED_EMAIL_DOMAINS`. Rejected
+identities are turned away **before any vault lookup**, on both the tool path
+("not authorized to use this server") and the enrollment page (HTTP 403). The
+gate is **fail-closed**: if **both** variables are unset, every authenticated
+identity is **rejected**, and the server logs a warning at startup — you must
+set at least one for the server to be usable.
+
+#### The Google OAuth app and the allowlist are two different gates
+
+They stack, and the OAuth app runs **first**. The allowlist can only *narrow*
+who the OAuth app already admitted — it can never *widen* it. So if the OAuth
+app rejects an account, adding that address to `ZULIPCHAT_ALLOWED_EMAILS` has no
+effect.
+
+This matters for **external collaborators** (e.g. a `@gmail.com` address). How
+Google's app type gates users:
+
+| Google OAuth app | Who can authenticate | Per-user maintenance |
+|------------------|----------------------|----------------------|
+| **Internal** | Only accounts in your Google Workspace org | None — externals are simply blocked (you'll see *"Access blocked: … can only be used within its organization"*) |
+| **External + Testing** | Only addresses on the **Test users** list (max 100) — this gates **everyone**, so org members must be listed too | High — you'd maintain your whole org on Google |
+| **External + In production** | Any Google account | None on Google's side |
+
+With an **Internal** app you cannot admit a `@gmail.com` collaborator at all,
+and **External + Testing** forces you to list your entire org on Google as well
+as in the app — two lists, the larger one on Google.
+
+**Recommended for org + a few externals:** set the Google app to **External, In
+production**. The scopes here (`openid email profile`) are non-sensitive, so
+Google requires **no app-verification review** to publish. Then the app
+allowlist is your **single source of truth**:
+
+- Org members — admitted by Google, allowed by `ZULIPCHAT_ALLOWED_EMAIL_DOMAINS`
+  (your org domain). No per-user upkeep.
+- External collaborators — added to `ZULIPCHAT_ALLOWED_EMAILS` only. One place.
+- Everyone else — rejected by the fail-closed allowlist, before any vault access.
+
+The trade-off: Google no longer restricts *who can authenticate*, so the
+allowlist becomes the sole gate (fail-closed, so this is safe — but review that
+one setting carefully; a too-broad domain would admit unintended accounts). If
+you need Google to keep fencing too but still admit a specific external, the
+only clean way is to give that person a guest/Cloud Identity account in your
+Workspace so they count as internal — heavier than one `ZULIPCHAT_ALLOWED_EMAILS`
+entry, and rarely worth it.
+
 ## OpenBao / Vault
 
 | Variable | Default | Purpose |
@@ -105,7 +171,22 @@ Each user's key is stored at `<mount>/data/<path>/<sha256(email)>`. The hash
 keeps the path clean and avoids listing everyone's email; operators can still
 map an email to its path by hashing the address the same way.
 
-The AppRole policy only needs create/read/update on that path prefix.
+The AppRole policy needs `create`/`read`/`update` on the **data** path prefix,
+plus `delete` on the matching **metadata** path so a rejected key can be purged
+(see "Automatic re-enrollment" below). With the default mount/path:
+
+```hcl
+path "secret/data/zulip-mcp/users/*" {
+  capabilities = ["create", "read", "update"]
+}
+
+path "secret/metadata/zulip-mcp/users/*" {
+  capabilities = ["delete"]
+}
+```
+
+If `ZULIPCHAT_REENROLL_ON_AUTH_FAILURE=false`, the `delete` rule is not needed
+(the server never purges keys automatically).
 
 ### Private / internal CA
 
@@ -155,10 +236,30 @@ Notes:
 |----------|---------|---------|
 | `ZULIPCHAT_ENROLL_SECRET` | random per-process | HMAC secret for enrollment links. Set this in production so links survive restarts and work across replicas. |
 | `ZULIPCHAT_PUBLIC_URL` | `ZULIPCHAT_AUTH_BASE_URL` | Public URL used to build enrollment links |
-| `ZULIPCHAT_ENROLL_TOKEN_TTL_SECONDS` | `900` | Enrollment link lifetime |
+| `ZULIPCHAT_ENROLL_TOKEN_TTL_SECONDS` | `900` | Enrollment link lifetime (seconds from when the link is minted) |
 | `ZULIPCHAT_ENROLL_MAX_ATTEMPTS` | `6` | Failed submissions before a cool-off |
 | `ZULIPCHAT_ENROLL_COOLOFF_SECONDS` | `900` | Cool-off duration after too many failures |
 | `ZULIPCHAT_KEY_CACHE_TTL_SECONDS` | `86400` | In-memory key cache inactivity TTL |
+| `ZULIPCHAT_REENROLL_ON_AUTH_FAILURE` | `true` | When Zulip rejects a stored key, clear it (cache + vault) and return a fresh `/enroll` link on that same call. Set `false` to keep the stale key and only surface Zulip's error. |
+
+**Link lifetime and single use.** An enrollment link is valid for
+`ZULIPCHAT_ENROLL_TOKEN_TTL_SECONDS` (default 15 minutes) counted from when it
+is minted — i.e. from the tool call that handed it out, not from when the user
+opens it. Each link is **single-use**: it is consumed once a key is
+successfully saved, after which opening or submitting it again shows a "link
+already used" page. A failed submission (wrong key, email mismatch, upstream
+error) does **not** consume the link, so the user can retry within the window.
+To enroll again (e.g. after a key rotation), run any Zulip tool to get a fresh
+link. The consumed-link record is in-memory per replica, like the cool-off
+counters, with two limits that only a shared/persistent store removes:
+
+- **Multi-replica:** a link used on one replica is not known to the others, so
+  back the record with a shared store to enforce single use across replicas.
+- **Restart:** the records are lost on restart. With a random per-process
+  `ZULIPCHAT_ENROLL_SECRET` this is harmless (old links also stop verifying
+  after a restart). But with a **stable** `ZULIPCHAT_ENROLL_SECRET` — the
+  recommended setting so links survive restarts — an already-used link that is
+  still within its lifetime can be used again after a restart, until it expires.
 
 ## Client setup (Claude Code)
 
@@ -172,8 +273,26 @@ a Zulip tool, you receive an `/enroll` link; open it, paste your Zulip API key
 After that, everything works automatically.
 
 **Key rotation / revocation:** rotate the key in Zulip, then run any Zulip tool
-again and use the fresh `/enroll` link to submit the new key. An operator can
-also delete a user's stored key from the vault.
+again. The server detects that Zulip rejected the old key, clears it from the
+cache and the vault automatically, and returns a fresh `/enroll` link in the
+same response — submit your new key there and continue. (This automatic cleanup
+is controlled by `ZULIPCHAT_REENROLL_ON_AUTH_FAILURE`, on by default; with it
+off, use the manual flow and have an operator delete the stale key from the
+vault.) Across multiple replicas the deletion is shared, but another replica
+that still has the old key cached will clear it the first time it, too, hits the
+rejection.
+
+> **Known limitation (unverified):** the auto-purge triggers only when Zulip's
+> error response carries `code == "UNAUTHORIZED"` (how a rotated/invalid key is
+> reported). A **deactivated** Zulip account may return a *different* code (e.g.
+> `USER_DEACTIVATED` / `REALM_DEACTIVATED`), in which case the key is **not**
+> purged automatically and an operator must delete it from the vault manually.
+> We have not confirmed the exact codes/HTTP status Zulip returns for these
+> cases against a live server. A more robust detection would key off the HTTP
+> `401` status (which covers invalid-key *and* deactivation uniformly) rather
+> than the `code` string — see `_looks_like_auth_failure` in
+> `core/client.py`. Note 403 must be excluded: in Zulip it means "authenticated
+> but not authorized", i.e. the key is still valid.
 
 ## Deployment requirements
 
@@ -186,6 +305,29 @@ also delete a user's stored key from the vault.
   cool-off counters to a shared store so the limit holds across replicas.
 - Set `ZULIPCHAT_ENROLL_SECRET` explicitly so enrollment links are valid across
   restarts and replicas.
+- **Persist the OAuth proxy state across container restarts.** FastMCP's OAuth
+  provider keeps its dynamic client registrations and token/refresh state in an
+  encrypted file store under its data directory (`~/.local/share/fastmcp/oauth-proxy/`
+  by default). In a container that path is on the ephemeral writable layer, so
+  **recreating the container** (`docker run --rm`, a redeploy, a new image) wipes
+  it and **forces every client to re-register and re-authenticate**. To avoid
+  that, point FastMCP's home at a mounted volume and make it writable by the
+  container user (uid `65532`):
+
+  ```yaml
+  environment:
+    FASTMCP_HOME: /data/fastmcp
+  volumes:
+    - fastmcp-oauth:/data/fastmcp   # must be writable by uid 65532
+  ```
+
+  The signing key and the store's directory are derived from the Google client
+  secret, so they are stable across restarts as long as that secret is unchanged;
+  rotating it causes a one-time re-registration. Note this file store is
+  **per container** — multiple replicas do not share it, so a multi-replica
+  deployment needs a shared `client_storage` (e.g. Redis) wired into the auth
+  provider, not just a volume. (This is unrelated to the DuckDB database, which
+  holds app state only.)
 
 ## What this deliberately does not do
 

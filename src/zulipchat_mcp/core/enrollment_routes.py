@@ -9,14 +9,22 @@ Zulip site is always taken from server config, never from the client.
 from __future__ import annotations
 
 import html
+import math
+import time
+from datetime import datetime, timezone
 
 from starlette.requests import Request
 from starlette.responses import HTMLResponse
 
 from ..config import get_config_manager
 from ..utils.logging import get_logger
-from . import hosted_runtime
-from .enrollment import EnrollOutcome, try_enroll, verify_enrollment_token
+from . import hosted_config, hosted_runtime
+from .enrollment import (
+    EnrollOutcome,
+    enrollment_token_expiry,
+    try_enroll,
+    verify_enrollment_token,
+)
 
 logger = get_logger(__name__)
 
@@ -32,6 +40,10 @@ _SECURITY_HEADERS = {
     "X-Frame-Options": "DENY",
 }
 
+# Static browser-tab title for every enrollment page. The per-page `title`
+# argument is used only for the visible <h1> heading.
+_PAGE_TITLE = "ZulipChat MCP — Enrollment"
+
 
 def _page(title: str, body: str, *, status: int = 200) -> HTMLResponse:
     doc = f"""<!doctype html>
@@ -39,7 +51,7 @@ def _page(title: str, body: str, *, status: int = 200) -> HTMLResponse:
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{html.escape(title)}</title>
+<title>{html.escape(_PAGE_TITLE)}</title>
 <style>
   body {{ font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
          color: {_TECH}; background: #f5f7f9; margin: 0; padding: 2rem; }}
@@ -73,11 +85,48 @@ def _invalid_link_page() -> HTMLResponse:
     )
 
 
+def _used_link_page() -> HTMLResponse:
+    return _page(
+        "Link already used",
+        "<p class='err'>This enrollment link has already been used.</p>"
+        "<p>Each link works once. To add or update your key, return to your MCP "
+        "client and run any Zulip tool again to get a fresh link.</p>",
+        status=400,
+    )
+
+
+def _not_allowed_page() -> HTMLResponse:
+    return _page(
+        "Not authorized",
+        "<p class='err'>Your account is not authorized to use this server.</p>"
+        "<p>If you believe this is a mistake, contact your administrator.</p>",
+        status=403,
+    )
+
+
+def _expiry_notice(token: str) -> str:
+    """A muted line stating when this link expires, or '' if not determinable."""
+    expiry = enrollment_token_expiry(token)
+    if expiry is None:
+        return ""
+    remaining = expiry - time.time()
+    if remaining <= 0:
+        return ""
+    mins = math.ceil(remaining / 60)
+    at = datetime.fromtimestamp(expiry, tz=timezone.utc).strftime("%H:%M UTC")
+    return (
+        f"<p class='muted'>This link expires at {at} "
+        f"(in about {mins} minute{'s' if mins != 1 else ''}). After that, run any "
+        "Zulip tool again to get a fresh one.</p>"
+    )
+
+
 def _form_page(email: str, token: str, *, error: str | None = None) -> HTMLResponse:
     err_html = f"<p class='err'>{html.escape(error)}</p>" if error else ""
     body = f"""
     <p>Signed in as <strong>{html.escape(email)}</strong>.</p>
     <p>To let this server act in Zulip as you, add your personal Zulip API key.</p>
+    {_expiry_notice(token)}
     <ol>
       <li>In Zulip, open <strong>Personal settings → Account &amp; privacy</strong>.</li>
       <li>Under <strong>API key</strong>, click <strong>Show/change your API key</strong>.</li>
@@ -102,6 +151,10 @@ async def enroll_get(request: Request) -> HTMLResponse:
     email = verify_enrollment_token(token)
     if not email:
         return _invalid_link_page()
+    if not hosted_config.is_identity_allowed(email):
+        return _not_allowed_page()
+    if hosted_runtime.get_used_tokens().is_used(token):
+        return _used_link_page()
     return _form_page(email, token)
 
 
@@ -112,6 +165,10 @@ async def enroll_post(request: Request) -> HTMLResponse:
     email = verify_enrollment_token(token)
     if not email:
         return _invalid_link_page()
+    if not hosted_config.is_identity_allowed(email):
+        return _not_allowed_page()
+    if hosted_runtime.get_used_tokens().is_used(token):
+        return _used_link_page()
 
     if not api_key:
         return _form_page(email, token, error="Please enter your API key.")
@@ -136,6 +193,12 @@ async def enroll_post(request: Request) -> HTMLResponse:
     )
 
     if result.outcome is EnrollOutcome.SUCCESS:
+        # Consume the link so it cannot be replayed. Bound the record by the
+        # token's own expiry; if that cannot be parsed, skip (the token will
+        # still expire on its own and verify will then reject it).
+        expiry = enrollment_token_expiry(token)
+        if expiry is not None:
+            hosted_runtime.get_used_tokens().mark_used(token, expiry)
         return _page(
             "All set",
             "<p class='ok'>Your Zulip API key has been saved.</p>"

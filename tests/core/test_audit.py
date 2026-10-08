@@ -18,7 +18,7 @@ class TestAuditLogging:
         audit_mod._AUDIT_ENABLED = False
         try:
             with caplog.at_level(logging.DEBUG, logger="zulipchat_mcp.audit"):
-                log_tool_invocation("send_message", stream="30 Infrastructure")
+                log_tool_invocation("send_message", stream="30 Platform Operations")
             assert len(caplog.records) == 0
         finally:
             audit_mod._AUDIT_ENABLED = original
@@ -57,7 +57,7 @@ class TestAuditLogging:
             with caplog.at_level(logging.DEBUG, logger="zulipchat_mcp.audit"):
                 log_tool_invocation(
                     "send_message",
-                    stream="00.16 Prayer Requests",
+                    stream="00.16 Personal Updates",
                     blocked=True,
                     reason="channel_filter",
                 )
@@ -78,15 +78,15 @@ class TestAuditLogging:
         try:
             with caplog.at_level(logging.DEBUG, logger="zulipchat_mcp.audit"):
                 log_channel_access(
-                    "30 Infrastructure",
+                    "30 Platform Operations",
                     "read",
                     identity="user",
                     message_count=42,
                 )
-            records = [r for r in caplog.records if "30 Infrastructure" in r.message]
+            records = [r for r in caplog.records if "30 Platform Operations" in r.message]
             assert len(records) == 1
             event = json.loads(records[0].message)
-            assert event["channel"] == "30 Infrastructure"
+            assert event["channel"] == "30 Platform Operations"
             assert event["access_type"] == "read"
             assert event["message_count"] == 42
         finally:
@@ -117,7 +117,7 @@ class TestAuditLogging:
         original = audit_mod._AUDIT_ENABLED
         audit_mod._AUDIT_ENABLED = True
         try:
-            evil_name = '00.16 Prayer", "injected": "true'
+            evil_name = '00.16 Personal", "injected": "true'
             with caplog.at_level(logging.DEBUG, logger="zulipchat_mcp.audit"):
                 log_tool_invocation("send_message", stream=evil_name)
             records = [r for r in caplog.records if "send_message" in r.message]

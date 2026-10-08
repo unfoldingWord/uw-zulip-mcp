@@ -8,16 +8,22 @@ from fastmcp.exceptions import ToolError
 from src.zulipchat_mcp.core.credential_resolver import (
     CredentialResolutionUnavailable,
     EnrollmentRequired,
+    IdentityNotAllowed,
 )
 from src.zulipchat_mcp.core.hosted_middleware import ZulipCredentialMiddleware
 from src.zulipchat_mcp.core.request_credentials import (
     RequestCredentials,
+    get_auth_failure_signal,
     get_request_credentials,
     set_hosted_mode,
 )
 
 VALID_KEY = "a" * 32
 _RESOLVE = "src.zulipchat_mcp.core.hosted_middleware.resolve_request_credentials"
+_RUNTIME = "src.zulipchat_mcp.core.hosted_middleware.hosted_runtime"
+_FLAG = (
+    "src.zulipchat_mcp.core.hosted_middleware.hosted_config.reenroll_on_auth_failure"
+)
 
 
 @pytest.fixture(autouse=True)
@@ -106,3 +112,81 @@ async def test_vault_unavailable_rejected(middleware, context):
         with pytest.raises(ToolError, match="try again"):
             await middleware.on_call_tool(context, call_next)
     call_next.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_identity_not_allowed_rejected(middleware, context):
+    set_hosted_mode(True)
+    call_next = AsyncMock()
+    err = IdentityNotAllowed("stranger@gmail.com")
+    with patch(_RESOLVE, new=AsyncMock(side_effect=err)):
+        with pytest.raises(ToolError, match="not authorized"):
+            await middleware.on_call_tool(context, call_next)
+    call_next.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_signal_bound_during_call(middleware, context):
+    """A fresh auth-failure signal is visible while the tool runs."""
+    observed = {}
+
+    async def call_next(ctx):
+        observed["signal"] = get_auth_failure_signal()
+        return "ok"
+
+    creds = RequestCredentials(email="a@b.com", api_key=VALID_KEY)
+    with patch(_RESOLVE, new=AsyncMock(return_value=creds)):
+        await middleware.on_call_tool(context, call_next)
+
+    assert observed["signal"] is not None
+    assert get_auth_failure_signal() is None  # unbound after
+
+
+@pytest.mark.asyncio
+async def test_rotated_key_triggers_reenrollment(middleware, context):
+    """A tripped signal clears the cache + vault and returns an enrollment link."""
+    set_hosted_mode(True)
+    cache = MagicMock()
+    store = MagicMock()
+    store.delete_api_key = AsyncMock()
+    runtime = MagicMock()
+    runtime.get_key_cache.return_value = cache
+    runtime.get_secret_store.return_value = store
+
+    async def call_next(ctx):
+        get_auth_failure_signal().trip()  # Zulip rejected the key
+        return {"result": "error"}
+
+    creds = RequestCredentials(email="a@b.com", api_key=VALID_KEY)
+    with (
+        patch(_RESOLVE, new=AsyncMock(return_value=creds)),
+        patch(_RUNTIME, runtime),
+        patch(_FLAG, return_value=True),
+    ):
+        with pytest.raises(ToolError, match="/enroll"):
+            await middleware.on_call_tool(context, call_next)
+
+    cache.invalidate.assert_called_once_with("a@b.com")
+    store.delete_api_key.assert_awaited_once_with("a@b.com")
+
+
+@pytest.mark.asyncio
+async def test_rotated_key_respects_disabled_flag(middleware, context):
+    """With the flag off, a tripped signal leaves the key and returns the result."""
+    set_hosted_mode(True)
+    runtime = MagicMock()
+
+    async def call_next(ctx):
+        get_auth_failure_signal().trip()
+        return {"result": "error"}
+
+    creds = RequestCredentials(email="a@b.com", api_key=VALID_KEY)
+    with (
+        patch(_RESOLVE, new=AsyncMock(return_value=creds)),
+        patch(_RUNTIME, runtime),
+        patch(_FLAG, return_value=False),
+    ):
+        result = await middleware.on_call_tool(context, call_next)
+
+    assert result == {"result": "error"}
+    runtime.get_secret_store.assert_not_called()

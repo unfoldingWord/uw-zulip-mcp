@@ -9,6 +9,7 @@ with two OAuth identities, proving:
 """
 
 import asyncio
+import os
 import socket
 import threading
 import time
@@ -54,6 +55,8 @@ def _free_port() -> int:
 @pytest.fixture(scope="module")
 def hosted_server():
     set_hosted_mode(True)
+    # The identity gate is fail-closed; allow the test identities' domain.
+    os.environ["ZULIPCHAT_ALLOWED_EMAIL_DOMAINS"] = "x.com"
     hosted_runtime.set_secret_store(
         _FakeStore({"alice@x.com": "a" * 32, "bob@x.com": "b" * 32})
     )
@@ -85,6 +88,7 @@ def hosted_server():
     time.sleep(1.5)
     yield f"http://127.0.0.1:{port}/mcp"
     set_hosted_mode(False)
+    os.environ.pop("ZULIPCHAT_ALLOWED_EMAIL_DOMAINS", None)
     hosted_runtime.reset()
 
 

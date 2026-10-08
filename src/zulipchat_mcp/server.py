@@ -35,6 +35,7 @@ except ImportError:
     service_manager_available = False
 
 from .tools import register_core_tools, register_extended_tools
+from .tools.registration import normalize_tool_schemas
 
 try:
     from .utils.database import init_database
@@ -267,6 +268,13 @@ def main() -> None:
             "google/oidc) or front with an authenticating proxy."
         )
 
+    if hosted and not hosted_config.identity_allowlist_configured():
+        logger.warning(
+            "No identity allowlist set - ALL authenticated identities will be "
+            "REJECTED (fail-closed). Set ZULIPCHAT_ALLOWED_EMAIL_DOMAINS and/or "
+            "ZULIPCHAT_ALLOWED_EMAILS to grant access."
+        )
+
     # Initialize MCP with modern configuration
     mcp = FastMCP(
         "ZulipChat MCP",
@@ -356,6 +364,9 @@ def main() -> None:
     else:
         logger.info("Registered core tool set")
 
+    # Make all-optional tool schemas declare `required: []` explicitly.
+    normalize_tool_schemas(mcp)
+
     # Warm user/stream caches for fast fuzzy resolution. Skipped in hosted
     # mode: there is no server-side user identity to warm caches for.
     if not hosted:
@@ -425,11 +436,31 @@ def main() -> None:
             f"  Agent tools:     {'disabled' if disable_agents else 'enabled'}"
         )
         if hosted:
-            lines.append("  Hosted mode:     YES (per-request credentials,")
-            lines.append("                   nothing stored server-side)")
+            lines.append("  Hosted mode:     YES (OAuth2 identity; per-user")
+            lines.append("                   Zulip keys stored in OpenBao/Vault)")
+            lines.append(
+                f"  Vault:           {'configured' if hosted_config.vault_enabled() else 'NOT configured'}"
+            )
             lines.append(
                 f"  Server auth:     {os.getenv('ZULIPCHAT_AUTH_MODE', 'none')}"
             )
+            if hosted_config.identity_allowlist_configured():
+                domains = sorted(hosted_config.allowed_email_domains())
+                n_emails = len(hosted_config.allowed_emails())
+                desc = ", ".join("@" + d for d in domains)
+                if n_emails:
+                    extra = f"{n_emails} address(es)"
+                    desc = f"{desc} + {extra}" if desc else extra
+                lines.append(f"  Identity allow:  {desc}")
+            else:
+                lines.append("  Identity allow:  NONE (no allowlist set)")
+                lines.append("")
+                lines.append(
+                    "  *** WARNING: fail-closed - ALL identities rejected. ***"
+                )
+                lines.append(
+                    "  *** Set ZULIPCHAT_ALLOWED_EMAIL_DOMAINS / _EMAILS.    ***"
+                )
         lines.append("")
         lines.append("=" * 60)
         lines.append("")
@@ -452,7 +483,14 @@ def main() -> None:
     else:
         host = args.host or os.getenv("ZULIPCHAT_HOST", "127.0.0.1")
         port = args.port or config_manager.config.port  # MCP_PORT env var, default 3000
-        mcp.run(transport=transport, host=host, port=port)
+        # log_config=None stops Uvicorn installing its own handlers, so its
+        # loggers propagate to our root handler and render as JSON like the rest.
+        mcp.run(
+            transport=transport,
+            host=host,
+            port=port,
+            uvicorn_config={"log_config": None},
+        )
 
 
 if __name__ == "__main__":

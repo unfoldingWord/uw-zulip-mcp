@@ -36,38 +36,57 @@ def setup_structured_logging(level: str = "INFO") -> None:
         setup_basic_logging(level)
         return
 
-    # Configure structlog
+    # Processors shared by structlog-native records and "foreign" records that
+    # come from the stdlib logging module (Uvicorn, httpx, FastMCP, ...). Running
+    # the same chain over both is what gives every line one JSON shape.
+    shared_processors: list[Any] = [
+        structlog.stdlib.add_logger_name,
+        structlog.stdlib.add_log_level,
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.CallsiteParameterAdder(
+            parameters=[
+                structlog.processors.CallsiteParameter.FILENAME,
+                structlog.processors.CallsiteParameter.LINENO,
+                structlog.processors.CallsiteParameter.FUNC_NAME,
+            ]
+        ),
+    ]
+
+    # structlog loggers hand off to the stdlib ProcessorFormatter instead of
+    # rendering JSON themselves, so a single formatter renders every record.
     structlog.configure(
         processors=[
             structlog.stdlib.filter_by_level,
-            structlog.stdlib.add_logger_name,
-            structlog.stdlib.add_log_level,
             structlog.stdlib.PositionalArgumentsFormatter(),
-            structlog.processors.TimeStamper(fmt="iso"),
+            *shared_processors,
             structlog.processors.StackInfoRenderer(),
-            structlog.processors.format_exc_info,
             structlog.processors.UnicodeDecoder(),
-            structlog.processors.CallsiteParameterAdder(
-                parameters=[
-                    structlog.processors.CallsiteParameter.FILENAME,
-                    structlog.processors.CallsiteParameter.LINENO,
-                    structlog.processors.CallsiteParameter.FUNC_NAME,
-                ]
-            ),
-            structlog.processors.dict_tracebacks,
-            structlog.processors.JSONRenderer(),
+            structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
         ],
         context_class=dict,
         logger_factory=structlog.stdlib.LoggerFactory(),
         cache_logger_on_first_use=True,
     )
 
-    # Set up stdlib logging
-    logging.basicConfig(
-        format="%(message)s",
-        stream=sys.stderr,
-        level=getattr(logging, level.upper()),
+    formatter = structlog.stdlib.ProcessorFormatter(
+        # Applied only to foreign (non-structlog) records before rendering.
+        foreign_pre_chain=shared_processors,
+        processors=[
+            structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+            structlog.processors.dict_tracebacks,
+            structlog.processors.format_exc_info,
+            structlog.processors.JSONRenderer(),
+        ],
     )
+
+    # One handler on the root logger renders app logs and foreign logs alike.
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(formatter)
+
+    root = logging.getLogger()
+    root.handlers.clear()
+    root.addHandler(handler)
+    root.setLevel(getattr(logging, level.upper()))
 
 
 def get_logger(name: str) -> Any:
