@@ -115,6 +115,46 @@ class TestSearchTools:
         assert {"operator": "search", "operand": "hello"} in narrow
 
     @pytest.mark.asyncio
+    async def test_search_messages_links_toggle(self, mock_deps, monkeypatch):
+        """Per-message links are off by default, on when the header enables them."""
+        from src.zulipchat_mcp.core import request_prefs
+
+        mock_deps.base_url = "https://chat.example.com"
+        mock_deps.get_messages_raw.return_value = {
+            "result": "success",
+            "messages": [
+                {
+                    "id": 55,
+                    "sender_full_name": "U",
+                    "sender_email": "e@example.com",
+                    "timestamp": 100,
+                    "content": "c",
+                    "type": "stream",
+                    "stream_id": 5,
+                    "display_recipient": "general",
+                    "subject": "test topic",
+                }
+            ],
+        }
+        monkeypatch.delenv("ZULIPCHAT_MESSAGE_LINKS_SEARCH", raising=False)
+
+        # Default: no header, env unset -> no link.
+        monkeypatch.setattr(request_prefs, "get_http_headers", lambda *a, **k: {})
+        off = await search_messages(stream="general")
+        assert "link" not in off["messages"][0]
+
+        # Header on -> link present.
+        monkeypatch.setattr(
+            request_prefs,
+            "get_http_headers",
+            lambda *a, **k: {"x-zulipchat-mcp-links-search": "on"},
+        )
+        on = await search_messages(stream="general")
+        assert on["messages"][0]["link"].endswith(
+            "/#narrow/channel/5-general/topic/test.20topic/near/55"
+        )
+
+    @pytest.mark.asyncio
     async def test_time_filter_post_fetch(self, mock_deps):
         """Test that time filtering happens after fetch (Bug Regression).
 

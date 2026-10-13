@@ -14,6 +14,7 @@ Key features:
 
 from __future__ import annotations
 
+import urllib.parse
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -717,3 +718,76 @@ def simple_narrow(
     """
     filters = build_basic_narrow(stream=stream, topic=topic, sender=sender, text=text)
     return NarrowHelper.to_api_format(filters)
+
+
+# --- Message permalinks ----------------------------------------------------
+#
+# Builds Zulip "near" permalinks to a single stream message, e.g.:
+#   {site}/#narrow/channel/{stream_id}-{slug}/topic/{enc_topic}/near/{id}
+#
+# Only stream messages get a link. DMs (and anything whose type/fields we do
+# not recognise) return None, which matches the deployment policy of excluding
+# DMs and is safe even where that filter is off — a stray DM gets no link
+# rather than a wrong or privacy-exposing one.
+
+
+def _hash_util_encode(text: str) -> str:
+    """Replicate Zulip's hash-fragment encoding (``hash_util.encodeHashComponent``).
+
+    Zulip does NOT use plain percent-encoding in narrow URLs. It percent-encodes
+    with nothing safe, escapes any literal ``.`` as ``%2E`` first, then replaces
+    every ``%`` with ``.``. So a space becomes ``.20`` and a literal ``.`` becomes
+    ``.2E``. Must match the server's ``url_encoding.hash_util_encode`` exactly or
+    links to topics with spaces/punctuation silently break.
+    """
+    return urllib.parse.quote(text, safe="").replace(".", "%2E").replace("%", ".")
+
+
+def _encode_stream_slug(stream_id: int, stream_name: str) -> str:
+    """Channel slug ``{stream_id}-{encoded_name}`` as Zulip builds it.
+
+    Spaces in the name become hyphens before hash-encoding. Zulip resolves the
+    channel by the integer prefix, so the name part is cosmetic, but we match
+    Zulip's own output.
+    """
+    return f"{stream_id}-{_hash_util_encode(stream_name.replace(' ', '-'))}"
+
+
+def message_permalink(base_url: str, message: dict[str, Any]) -> str | None:
+    """A Zulip permalink to a single stream message, or None if not applicable.
+
+    Returns None (so callers add the link only when present) when:
+    - ``base_url`` is empty,
+    - the message has no ``id``,
+    - the message is not a stream message (``type != "stream"``) — e.g. a DM,
+    - the stream id or topic is missing.
+
+    ``base_url`` must be the server-pinned site (e.g. ``client.base_url``); the
+    link carries only IDs, and Zulip enforces its own read permissions on click.
+    """
+    if not base_url:
+        return None
+    message_id = message.get("id")
+    if not message_id or message.get("type") != "stream":
+        return None
+
+    stream_id = message.get("stream_id")
+    # Stream messages carry the topic in "subject" (API) or sometimes "topic".
+    topic = message.get("subject")
+    if topic is None:
+        topic = message.get("topic")
+    if stream_id is None or topic is None:
+        return None
+
+    # "display_recipient" is the stream name for stream messages; fall back to
+    # the stream id alone if it is missing (the slug name is cosmetic).
+    stream_name = message.get("display_recipient")
+    if not isinstance(stream_name, str):
+        stream_name = str(stream_id)
+
+    slug = _encode_stream_slug(int(stream_id), stream_name)
+    enc_topic = _hash_util_encode(str(topic))
+    return (
+        f"{base_url.rstrip('/')}/#narrow/channel/{slug}"
+        f"/topic/{enc_topic}/near/{message_id}"
+    )

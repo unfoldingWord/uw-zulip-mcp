@@ -2,6 +2,15 @@
 
 All notable changes to ZulipChat MCP are documented in this file.
 
+## [Unreleased]
+
+### Added
+- **Zulip message permalinks in tool results.** `get_message` now includes a `link` to the message (stream messages only; off via `ZULIPCHAT_MESSAGE_LINK_SINGLE=false`). `search_messages` can include a per-message `link`, **off by default** (`ZULIPCHAT_MESSAGE_LINKS_SEARCH`) and overridable per client with the `X-Zulipchat-MCP-Links-Search` header. The link helper replicates Zulip's non-standard hash encoding so topics with spaces/punctuation/non-ASCII resolve correctly.
+- **Two-tier settings model (policy vs. preference).** Introduced an explicit, small registry (`core/request_prefs.py`) of client-overridable **preferences** (header-settable), distinct from server-only **policy** (read-only, disable-agents, channel filter, identity allowlist, unsafe mode, single-message links). Client headers can only ever touch registry keys; a test enforces that policy keys stay out.
+
+### Fixed
+- Removed stale comments in `config.py` that still described the retired `X-Zulip-*` credential-header path (credentials are resolved from the OAuth identity via the vault).
+
 ## [0.9.0] - 2026-10-08
 
 ### Added

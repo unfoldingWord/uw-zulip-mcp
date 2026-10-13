@@ -176,6 +176,29 @@ Full guide: [Hosted Mode & Authentication](hosted-authentication.md).
 | `ZULIPCHAT_HOST` | `127.0.0.1` | Bind address for HTTP/SSE mode |
 | `MCP_PORT` | `3000` | Listen port for HTTP/SSE mode (also `--port`) |
 
+### Message links
+
+Tools can include a Zulip permalink to a message. Two independent settings, on
+the two tiers (see [Settings: policy vs. preference](#settings-policy-vs-preference)):
+
+| Variable | Default | Tier | Description |
+|----------|---------|------|-------------|
+| `ZULIPCHAT_MESSAGE_LINK_SINGLE` | `true` | policy | Include a `link` in single-message results (`get_message`). Server-only; no client override |
+| `ZULIPCHAT_MESSAGE_LINKS_SEARCH` | `false` | preference | Include a `link` on each message in `search_messages` results. Server default, client-overridable (see header below) |
+
+Only **stream** messages get a link; DMs and anything without a stream/topic get
+none. The header override for the search setting:
+
+| Header | Values | Effect |
+|--------|--------|--------|
+| `X-Zulipchat-MCP-Links-Search` | `on`/`off` (`1`/`0`, `true`/`false`, `yes`/`no`) | Per-request override of `ZULIPCHAT_MESSAGE_LINKS_SEARCH` for this client. A malformed value falls back to the server default. |
+
+A client sets the header once in its MCP server config, e.g.:
+```bash
+claude mcp add --transport http zulip https://mcp.your-org.example/mcp \
+  --header "X-Zulipchat-MCP-Links-Search: on"
+```
+
 ### Other
 
 | Variable | Default | Description |
@@ -183,6 +206,23 @@ Full guide: [Hosted Mode & Authentication](hosted-authentication.md).
 | `ZULIPCHAT_QUIET` | `false` | Suppress startup privacy notice |
 | `MCP_DEBUG` | `false` | Debug logging |
 | `ZULIPCHAT_DB_PATH` | `.mcp/zulipchat/zulipchat.duckdb` | Path to the local DuckDB file (relative to the working directory). See [Local state & persistence](#local-state--persistence) |
+
+## Settings: policy vs. preference
+
+Settings fall into two tiers:
+
+- **Policy** — server-only (env/CLI), never changeable by a client: read-only,
+  disable-agents, the channel filter, the identity allowlist, unsafe mode, and
+  `ZULIPCHAT_MESSAGE_LINK_SINGLE`.
+- **Preference** — a server default that a client *may* override per request via
+  an HTTP header. The overridable set is a small, explicit registry
+  (`core/request_prefs.py`); today it contains only `links_search`.
+
+Client headers are untrusted input, so only registry keys are ever read from a
+header — a header can never change a policy setting. A test
+(`tests/core/test_request_prefs.py`) enforces that policy keys stay out of the
+registry. Header overrides apply only over a network transport (hosted/HTTP);
+in stdio mode there are no request headers, so the server defaults apply.
 
 ## Local state & persistence
 

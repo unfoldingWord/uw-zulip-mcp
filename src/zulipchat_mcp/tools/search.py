@@ -14,6 +14,8 @@ from pydantic import Field
 
 from ..config import get_client
 from ..core.client import ZulipClientWrapper
+from ..core.request_prefs import pref_enabled
+from ..utils.narrow_helpers import message_permalink
 
 NarrowOperand = str | int | list[str]
 
@@ -451,27 +453,36 @@ async def search_messages(
             if before_ts is not None:
                 messages = [m for m in messages if m["timestamp"] <= before_ts]
 
+            # Per-message permalinks are off by default; a client can enable
+            # them per request via the X-Zulipchat-MCP-Links-Search header.
+            include_links = pref_enabled("links_search")
+
             # Process messages for response
             processed_messages = []
             for msg in messages:
-                processed_messages.append(
-                    {
-                        "id": msg["id"],
-                        "sender": msg["sender_full_name"],
-                        "email": msg["sender_email"],
-                        "timestamp": msg["timestamp"],
-                        "content": (
-                            msg["content"][:1000] + "..."
-                            if len(msg["content"]) > 1000
-                            else msg["content"]
-                        ),
-                        "type": msg["type"],
-                        "stream": msg.get("display_recipient"),
-                        "topic": msg.get("subject"),
-                        "reactions": msg.get("reactions", []),
-                        "flags": msg.get("flags", []),
-                    }
-                )
+                processed = {
+                    "id": msg["id"],
+                    "sender": msg["sender_full_name"],
+                    "email": msg["sender_email"],
+                    "timestamp": msg["timestamp"],
+                    "content": (
+                        msg["content"][:1000] + "..."
+                        if len(msg["content"]) > 1000
+                        else msg["content"]
+                    ),
+                    "type": msg["type"],
+                    "stream": msg.get("display_recipient"),
+                    "topic": msg.get("subject"),
+                    "reactions": msg.get("reactions", []),
+                    "flags": msg.get("flags", []),
+                }
+                if include_links:
+                    # Built from the raw msg, which carries stream_id (dropped
+                    # in the projection above). None for DMs — no link added.
+                    link = message_permalink(client.base_url, msg)
+                    if link:
+                        processed["link"] = link
+                processed_messages.append(processed)
 
             return {
                 "status": "success",

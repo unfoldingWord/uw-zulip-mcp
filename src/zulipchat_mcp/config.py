@@ -145,8 +145,9 @@ class ConfigManager:
     def validate_hosted_config(self) -> bool:
         """Validate configuration for hosted (multi-user) mode.
 
-        Hosted mode needs only the server-pinned site; user credentials
-        arrive per-request via headers and are never configured server-side.
+        Hosted mode needs only the server-pinned site; each user's credentials
+        are resolved per-request from their OAuth identity via the vault, not
+        configured server-side.
         """
         return bool(self.config.site)
 
@@ -264,7 +265,8 @@ def set_current_identity(identity: str) -> None:
     if is_hosted_mode():
         raise ValueError(
             "Identity switching is unavailable in hosted mode. Requests run "
-            "as the user identified by the X-Zulip-* credential headers."
+            "as the user resolved from the OAuth identity (see "
+            "credential_resolver.py)."
         )
     global _current_identity
     if identity not in ("user", "bot"):
@@ -278,9 +280,9 @@ def get_client() -> ZulipClientWrapper:
     This is the canonical way to get a client - it respects the
     current identity setting from switch_identity().
 
-    When request-scoped credentials are bound (hosted mode, supplied by the
-    MCP client via X-Zulip-* headers), they take precedence and the client
-    is built from them plus the server-pinned site. Nothing is persisted.
+    When request-scoped credentials are bound (hosted mode, resolved from the
+    OAuth identity via the vault), they take precedence and the client is built
+    from them plus the server-pinned site. Nothing is persisted.
     """
     from .core.client import ZulipClientWrapper
     from .core.request_credentials import get_request_credentials
