@@ -197,7 +197,7 @@ def test_secretstore_hashed_path_is_deterministic_and_clean():
     p1 = store.user_path("User@x.org")
     p2 = store.user_path("user@x.org")
     assert p1 == p2  # case-insensitive, same hash
-    assert "@" not in p1 and p1.startswith("zulip-mcp/users/")
+    assert "@" not in p1 and p1.startswith("zulipchat-mcp/users/")
 
 
 # --- credential resolver ---------------------------------------------------
