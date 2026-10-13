@@ -1,6 +1,13 @@
 # Roadmap
 
-## v0.10.0 (Current)
+## v0.11.0 (Current)
+
+Released 2026-10-13 — Docker image `unfoldingword/zulipchat-mcp`
+
+**Highlights:**
+- Renamed the default OpenBao/Vault secret path from `zulip-mcp/users` to `zulipchat-mcp/users` to match the application name. **Breaking for hosted deployments that rely on the default:** existing per-user keys live under the old path, so set `OPENBAO_KV_PATH=zulip-mcp/users` to keep the previous location, move the secrets in Vault, or re-enroll users.
+
+## v0.10.0
 
 Released 2026-10-13 — Docker image `unfoldingword/zulipchat-mcp`
 

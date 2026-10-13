@@ -52,9 +52,29 @@ checks passed.
 ## Release steps
 
 ### 1. Decide the version number (semver)
+
+We follow [Semantic Versioning](https://semver.org/). The "public API" here is
+the MCP tool surface (tool names, parameters, and response shapes) together with
+the server's configuration contract (env vars, their defaults, and the vault
+secret layout).
+
+The baseline meaning of each bump:
 - `PATCH` for bug fixes and docs-only releases.
 - `MINOR` for new tools/features or non-breaking changes.
 - `MAJOR` for breaking API or configuration changes.
+
+**Pre-1.0 convention (while the version is `0.y.z`):** the public API is not yet
+declared stable, so we do **not** spend a major bump on every breaking change.
+Instead:
+- A breaking API or configuration change bumps the **minor** (`0.11.0 → 0.12.0`).
+  Call it out clearly in `CHANGELOG.md` with an upgrade note.
+- A feature or fix bumps the **patch** (`0.11.0 → 0.11.1`).
+
+**`1.0.0` is a deliberate stability commitment, not an incidental bump.** Release
+it only when we intend to declare the tool surface and configuration contract
+stable and commit to it going forward (breaking changes thereafter require a new
+major). Do not reach `1.0.0` merely because a breaking change landed — while
+pre-1.0, roll that into a minor per the convention above.
 
 ### 2. Promote develop to main
 Releases are tagged on `main`. Merge the release-ready `develop` into `main`
