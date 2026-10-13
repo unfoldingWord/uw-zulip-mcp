@@ -146,6 +146,23 @@ class TestMessagePermalink:
         }
         assert message_permalink(SITE, msg) is None
 
+    def test_dot_in_stream_name_and_quotes_in_topic(self):
+        # Regression: a stream name with a literal '.' must encode to '.2E' in
+        # the slug, and a single quote in the topic to '.27' — not left raw.
+        # (A naive encoder leaves '.' and "'" unencoded, producing broken links.)
+        msg = {
+            "id": 999001,
+            "type": "stream",
+            "stream_id": 42,
+            "display_recipient": "07 Example.Channel",
+            "subject": "MCP 'Standard'",
+        }
+        link = message_permalink("https://chat.example.com", msg)
+        assert link == (
+            "https://chat.example.com/#narrow/channel/42-07-Example.2EChannel"
+            "/topic/MCP.20.27Standard.27/near/999001"
+        )
+
     def test_missing_fields_return_none(self):
         assert message_permalink("", self._stream_msg()) is None
         assert (
