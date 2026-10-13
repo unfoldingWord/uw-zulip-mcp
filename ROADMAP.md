@@ -1,6 +1,13 @@
 # Roadmap
 
-## v0.9.0 (Current)
+## v0.10.0 (Current)
+
+Released 2026-10-13 — Docker image `unfoldingword/zulipchat-mcp`
+
+**Highlights:**
+- Zulip message permalinks in tool results: `get_message` returns a `link` (on by default); `search_messages` can add per-message links via the `include_links` parameter (off by default, `ZULIPCHAT_MESSAGE_LINKS_SEARCH`).
+
+## v0.9.0
 
 Released 2026-10-08 — Docker image `unfoldingword/zulipchat-mcp`
 
