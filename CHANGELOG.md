@@ -2,6 +2,14 @@
 
 All notable changes to ZulipChat MCP are documented in this file.
 
+## [0.10.0] - 2026-10-13
+
+### Added
+- **Zulip message permalinks in tool results.** `get_message` includes a `link` to the message (stream messages only; off via `ZULIPCHAT_MESSAGE_LINK_SINGLE=false`). `search_messages` can add a per-message `link`: off by default (`ZULIPCHAT_MESSAGE_LINKS_SEARCH`), overridable **per call** via the new `include_links` parameter. (A tool parameter is used rather than a client header because an org-managed claude.ai connector shares one config across users, so a header can't be per-user.) The link helper replicates Zulip's non-standard hash encoding so topics with spaces/punctuation/non-ASCII resolve correctly.
+
+### Fixed
+- Removed stale comments in `config.py` that still described the retired `X-Zulip-*` credential-header path (credentials are resolved from the OAuth identity via the vault).
+
 ## [0.9.0] - 2026-10-08
 
 ### Added

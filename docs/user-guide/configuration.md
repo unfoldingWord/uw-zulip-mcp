@@ -176,6 +176,26 @@ Full guide: [Hosted Mode & Authentication](hosted-authentication.md).
 | `ZULIPCHAT_HOST` | `127.0.0.1` | Bind address for HTTP/SSE mode |
 | `MCP_PORT` | `3000` | Listen port for HTTP/SSE mode (also `--port`) |
 
+### Message links
+
+Tools can include a Zulip permalink (`link`) to a message. Only **stream**
+messages get a link; DMs and anything without a stream/topic get none.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ZULIPCHAT_MESSAGE_LINK_SINGLE` | `true` | Include a `link` in single-message results (`get_message`). Set `false` to disable |
+| `ZULIPCHAT_MESSAGE_LINKS_SEARCH` | `false` | Default for per-message `link`s in `search_messages` results |
+
+For `search_messages`, the server default above can be overridden **per call**
+by the agent via the tool's `include_links` parameter:
+
+- `include_links` omitted → use `ZULIPCHAT_MESSAGE_LINKS_SEARCH` (off by default).
+- `include_links: true` / `false` → force links on or off for that call.
+
+A per-call parameter is used (rather than a client header) because an org-managed
+claude.ai connector shares one config across all users, so a header could not be
+a per-user setting. The parameter lets each user's agent decide.
+
 ### Other
 
 | Variable | Default | Description |

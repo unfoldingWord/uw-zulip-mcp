@@ -11,6 +11,8 @@ from fastmcp import FastMCP
 from pydantic import Field
 
 from ..config import get_client
+from ..utils.env import env_bool
+from ..utils.narrow_helpers import message_permalink
 
 
 def sanitize_content(content: str, max_length: int = 50000) -> str:
@@ -146,10 +148,14 @@ async def get_message(
         result = client.get_message(message_id)
 
         if result.get("result") == "success":
-            return {
-                "status": "success",
-                "message": result.get("message", {}),
-            }
+            message = result.get("message", {})
+            out: dict[str, Any] = {"status": "success", "message": message}
+            # Single-message link is on by default; operators can disable it.
+            if env_bool("ZULIPCHAT_MESSAGE_LINK_SINGLE", True):
+                link = message_permalink(client.base_url, message)
+                if link:
+                    out["link"] = link
+            return out
         else:
             return {"status": "error", "error": result.get("msg", "Message not found")}
 

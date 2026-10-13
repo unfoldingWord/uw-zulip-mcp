@@ -115,6 +115,47 @@ class TestSearchTools:
         assert {"operator": "search", "operand": "hello"} in narrow
 
     @pytest.mark.asyncio
+    async def test_search_messages_links_toggle(self, mock_deps, monkeypatch):
+        """Links follow the include_links param, falling back to the env default."""
+        mock_deps.base_url = "https://chat.example.com"
+        mock_deps.get_messages_raw.return_value = {
+            "result": "success",
+            "messages": [
+                {
+                    "id": 55,
+                    "sender_full_name": "U",
+                    "sender_email": "e@example.com",
+                    "timestamp": 100,
+                    "content": "c",
+                    "type": "stream",
+                    "stream_id": 5,
+                    "display_recipient": "general",
+                    "subject": "test topic",
+                }
+            ],
+        }
+        monkeypatch.delenv("ZULIPCHAT_MESSAGE_LINKS_SEARCH", raising=False)
+
+        link = "/#narrow/channel/5-general/topic/test.20topic/near/55"
+
+        # Default (param omitted, env unset) -> no link.
+        off = await search_messages(stream="general")
+        assert "link" not in off["messages"][0]
+
+        # Explicit include_links=True -> link present.
+        on = await search_messages(stream="general", include_links=True)
+        assert on["messages"][0]["link"].endswith(link)
+
+        # Param omitted but env default on -> link present.
+        monkeypatch.setenv("ZULIPCHAT_MESSAGE_LINKS_SEARCH", "true")
+        env_on = await search_messages(stream="general")
+        assert env_on["messages"][0]["link"].endswith(link)
+
+        # Explicit include_links=False overrides the env default -> no link.
+        forced_off = await search_messages(stream="general", include_links=False)
+        assert "link" not in forced_off["messages"][0]
+
+    @pytest.mark.asyncio
     async def test_time_filter_post_fetch(self, mock_deps):
         """Test that time filtering happens after fetch (Bug Regression).
 
