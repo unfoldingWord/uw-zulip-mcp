@@ -161,7 +161,7 @@ entry, and rarely worth it.
 | `OPENBAO_ROLE_ID` / `OPENBAO_SECRET_ID` | — | AppRole login (recommended) |
 | `OPENBAO_TOKEN` | — | Direct token (dev/testing; bypasses AppRole) |
 | `OPENBAO_KV_MOUNT` | `secret` | KV v2 mount |
-| `OPENBAO_KV_PATH` | `zulip-mcp/users` | Base path for user secrets |
+| `OPENBAO_KV_PATH` | `zulipchat-mcp/users` | Base path for user secrets |
 | `OPENBAO_NAMESPACE` | — | Optional namespace |
 | `OPENBAO_TLS_VERIFY` | `true` | Set to `false` to disable TLS verification (dev only) |
 | `OPENBAO_CACERT` | — | Path (inside the container) to a PEM CA bundle, for a private/internal CA |
@@ -176,11 +176,11 @@ plus `delete` on the matching **metadata** path so a rejected key can be purged
 (see "Automatic re-enrollment" below). With the default mount/path:
 
 ```hcl
-path "secret/data/zulip-mcp/users/*" {
+path "secret/data/zulipchat-mcp/users/*" {
   capabilities = ["create", "read", "update"]
 }
 
-path "secret/metadata/zulip-mcp/users/*" {
+path "secret/metadata/zulipchat-mcp/users/*" {
   capabilities = ["delete"]
 }
 ```
@@ -200,8 +200,8 @@ Docker run:
 
 ```bash
 docker run ... \
-  -v /host/path/your-ca.pem:/etc/zulip-mcp/openbao-ca.pem:ro \
-  -e OPENBAO_CACERT=/etc/zulip-mcp/openbao-ca.pem \
+  -v /host/path/your-ca.pem:/etc/zulipchat-mcp/openbao-ca.pem:ro \
+  -e OPENBAO_CACERT=/etc/zulipchat-mcp/openbao-ca.pem \
   ...
 ```
 
@@ -209,11 +209,11 @@ docker-compose:
 
 ```yaml
 services:
-  zulip-mcp:
+  zulipchat-mcp:
     environment:
-      OPENBAO_CACERT: /etc/zulip-mcp/openbao-ca.pem
+      OPENBAO_CACERT: /etc/zulipchat-mcp/openbao-ca.pem
     volumes:
-      - ./your-ca.pem:/etc/zulip-mcp/openbao-ca.pem:ro
+      - ./your-ca.pem:/etc/zulipchat-mcp/openbao-ca.pem:ro
 ```
 
 Notes:

@@ -11,7 +11,7 @@ beyond process lifetime; values are read on demand.
       OPENBAO_SECRET_ID    AppRole secret_id
       OPENBAO_TOKEN        Direct token (dev/testing; bypasses AppRole)
       OPENBAO_KV_MOUNT     KV v2 mount (default "secret")
-      OPENBAO_KV_PATH      Base path for user secrets (default "zulip-mcp/users")
+      OPENBAO_KV_PATH      Base path for user secrets (default "zulipchat-mcp/users")
       OPENBAO_TLS_VERIFY   "false" disables TLS verification (dev only)
 
     Key cache
@@ -86,8 +86,8 @@ def openbao_kv_mount() -> str:
 
 
 def openbao_kv_path() -> str:
-    return os.getenv("OPENBAO_KV_PATH", "zulip-mcp/users").strip("/") or (
-        "zulip-mcp/users"
+    return os.getenv("OPENBAO_KV_PATH", "zulipchat-mcp/users").strip("/") or (
+        "zulipchat-mcp/users"
     )
 
 

@@ -2,6 +2,14 @@
 
 All notable changes to ZulipChat MCP are documented in this file.
 
+## [0.11.0] - 2026-10-13
+
+### Changed
+- **Renamed the default OpenBao/Vault secret path from `zulip-mcp/users` to `zulipchat-mcp/users`** so the vault layout matches the application name. **Breaking for hosted deployments that rely on the default `OPENBAO_KV_PATH`:** existing per-user Zulip keys are stored under the old `zulip-mcp/users` path and will not be found at the new default. To upgrade, either set `OPENBAO_KV_PATH=zulip-mcp/users` to keep the previous location, move the secrets to the new path in Vault (and update the AppRole policy prefixes), or have users re-enroll. Deployments that set `OPENBAO_KV_PATH` explicitly are unaffected.
+
+### Documentation
+- Documented the semantic-versioning convention in `RELEASING.md`, including the pre-1.0 rule (breaking changes bump the minor) and that `1.0.0` is a deliberate stability commitment.
+
 ## [0.10.0] - 2026-10-13
 
 ### Added
