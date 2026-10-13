@@ -14,7 +14,7 @@ from pydantic import Field
 
 from ..config import get_client
 from ..core.client import ZulipClientWrapper
-from ..core.request_prefs import pref_enabled
+from ..utils.env import env_bool
 from ..utils.narrow_helpers import message_permalink
 
 NarrowOperand = str | int | list[str]
@@ -304,6 +304,16 @@ async def search_messages(
             )
         ),
     ] = "relevance",
+    include_links: Annotated[
+        bool | None,
+        Field(
+            description=(
+                "If true, add a Zulip permalink (`link`) to each stream message; "
+                "if false, omit it. Omit the parameter to use the server default "
+                "(ZULIPCHAT_MESSAGE_LINKS_SEARCH, off by default). e.g. true."
+            )
+        ),
+    ] = None,
 ) -> dict[str, Any]:
     """Advanced search with fuzzy user resolution and comprehensive filtering."""
     client = get_client()
@@ -453,9 +463,13 @@ async def search_messages(
             if before_ts is not None:
                 messages = [m for m in messages if m["timestamp"] <= before_ts]
 
-            # Per-message permalinks are off by default; a client can enable
-            # them per request via the X-Zulipchat-MCP-Links-Search header.
-            include_links = pref_enabled("links_search")
+            # Per-message permalinks: the caller's `include_links` wins; when it
+            # is omitted, fall back to the server default env var (off by default).
+            links_on = (
+                include_links
+                if include_links is not None
+                else env_bool("ZULIPCHAT_MESSAGE_LINKS_SEARCH", False)
+            )
 
             # Process messages for response
             processed_messages = []
@@ -476,7 +490,7 @@ async def search_messages(
                     "reactions": msg.get("reactions", []),
                     "flags": msg.get("flags", []),
                 }
-                if include_links:
+                if links_on:
                     # Built from the raw msg, which carries stream_id (dropped
                     # in the projection above). None for DMs — no link added.
                     link = message_permalink(client.base_url, msg)

@@ -272,16 +272,6 @@ a Zulip tool, you receive an `/enroll` link; open it, paste your Zulip API key
 (from **Personal settings → Account & privacy → API key** in Zulip), and submit.
 After that, everything works automatically.
 
-**Per-user preferences via headers.** A client may override the small set of
-client-overridable preferences by adding a header to its config — e.g. to get a
-Zulip permalink on each `search_messages` result:
-```bash
-claude mcp add --transport http zulipchat https://mcp.your-org.example/mcp \
-  --header "X-Zulipchat-MCP-Links-Search: on"
-```
-Only designated preferences can be set this way; policy/security settings cannot.
-See [Settings: policy vs. preference](configuration.md#settings-policy-vs-preference).
-
 **Key rotation / revocation:** rotate the key in Zulip, then run any Zulip tool
 again. The server detects that Zulip rejected the old key, clears it from the
 cache and the vault automatically, and returns a fresh `/enroll` link in the
